@@ -1,0 +1,21 @@
+services:
+  devcontainer:
+    build:
+      context: .
+      args:
+        REPO_NAME: lab-auto-pulumi
+    # You can run `devcontainer-info content-url` in codespaces to see what image base is
+    volumes:
+      - ..:/workspaces/lab-auto-pulumi:cached
+      # Break out the venv folder as a separate docker volume for better performance on Windows hosts
+      - python_venv:/workspaces/lab-auto-pulumi/.venv
+    command: sleep infinity
+    ports:
+      - "56805:2222"
+    environment:
+      - AWS_PROFILE=localstack
+      - AWS_DEFAULT_REGION=us-east-1
+
+
+volumes:
+  python_venv: {}
