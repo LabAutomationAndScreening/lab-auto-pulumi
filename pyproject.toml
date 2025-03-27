@@ -1,0 +1,52 @@
+[project]
+name = "lab-auto-pulumi"
+version = "0.1.0"
+description = "Pulumi helpers"
+authors = [
+    {name = "Eli Fine"},
+
+]
+readme = "README.md"
+requires-python = ">=3.12.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+
+    "Programming Language :: Python :: 3.12",
+
+    "Programming Language :: Python :: 3.13",
+
+]
+dependencies = [
+
+]
+
+
+[dependency-groups]
+dev = [
+    # Specific to this repository
+
+
+    # Managed by upstream template
+    "pyright>=1.1.397",
+    "pytest>=8.3.4",
+    "pytest-cov>=6.0.0",
+    "pytest-randomly>=3.16.0",
+
+
+]
+
+[tool.setuptools]
+license-files = [] # kludge until this bug is fixed https://github.com/pypa/setuptools/issues/4759
+
+[tool.uv]
+package = true
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple/"
+publish-url = "https://upload.pypi.org/legacy/"
+
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+publish-url = "https://test.pypi.org/legacy/"
