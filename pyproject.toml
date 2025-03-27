@@ -17,7 +17,12 @@ classifiers = [
 
 ]
 dependencies = [
-
+    "pulumi>=3.156.0",
+    "pulumi-aws>=6.72.0",
+    "pulumi-aws-native>=1.26.0",
+    "ephemeral-pulumi-deploy>=0.0.4",
+    "boto3>=1.37.11",
+    "pydantic>=2.10.6",
 ]
 
 
@@ -25,6 +30,7 @@ dependencies = [
 dev = [
     # Specific to this repository
 
+    "boto3-stubs[all]==1.36.3", # there's a bug/conflict in 1.37.4 affecting pyright: https://github.com/LabAutomationAndScreening/copier-cloud-courier-infrastructure/actions/runs/13596390146/job/38014193360#step:11:69
 
     # Managed by upstream template
     "pyright>=1.1.397",
