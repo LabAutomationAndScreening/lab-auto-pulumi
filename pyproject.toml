@@ -1,6 +1,6 @@
 [project]
 name = "lab-auto-pulumi"
-version = "0.1.1"
+version = "0.1.3"
 description = "Pulumi helpers"
 authors = [
     {name = "Eli Fine"},

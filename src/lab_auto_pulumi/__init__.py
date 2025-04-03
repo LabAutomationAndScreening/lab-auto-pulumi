@@ -19,6 +19,9 @@ from .lib import get_ssm_param_value
 from .permissions import AwsAccountInfo
 from .permissions import AwsSsoPermissionSet
 from .permissions import AwsSsoPermissionSetAccountAssignments
+from .permissions import User
+from .permissions import UserInfo
+from .permissions import Username
 
 __all__ = [
     "CENTRAL_NETWORKING_SSM_PREFIX",
@@ -38,6 +41,9 @@ __all__ = [
     "AwsSsoPermissionSet",
     "AwsSsoPermissionSetAccountAssignments",
     "Ec2WithRdp",
+    "User",
+    "UserInfo",
+    "Username",
     "WorkloadName",
     "get_manual_artifacts_bucket_name",
     "get_org_managed_ssm_param_value",
