@@ -34,6 +34,7 @@ class Ec2WithRdp(ComponentResource):
         additional_instance_tags: list[TagArgs] | None = None,
         security_group_description: str = "Allow all outbound traffic for SSM access",
         ingress_rules: list[ec2.SecurityGroupIngressArgs] | None = None,
+        # remember for Windows Instances, if you create an ingress rule, you also need to create a Firewall inbound rule on the EC2 instance itself in order for it to actually be accessible
         parent: Resource | None = None,
     ):
         super().__init__("labauto:Ec2WithRdp", append_resource_suffix(name), None, opts=ResourceOptions(parent=parent))
