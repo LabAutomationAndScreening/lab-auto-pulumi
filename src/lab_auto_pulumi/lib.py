@@ -4,6 +4,8 @@ from mypy_boto3_ssm import SSMClient
 from pydantic import BaseModel
 from pydantic import Field
 
+from .permissions import AwsAccountInfo
+
 type WorkloadName = str
 type AwsAccountId = str
 
@@ -28,12 +30,6 @@ def get_org_managed_ssm_param_value(param_name: str) -> str:
 
 def get_manual_artifacts_bucket_name() -> str:
     return get_org_managed_ssm_param_value("/org-managed/manual-artifacts-bucket-name")
-
-
-class AwsAccountInfo(BaseModel, frozen=True):
-    version: str = "0.0.1"
-    id: str
-    name: str
 
 
 class AwsLogicalWorkload(BaseModel):
