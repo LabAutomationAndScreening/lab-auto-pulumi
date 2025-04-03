@@ -16,12 +16,16 @@ from .lib import WorkloadName
 from .lib import get_manual_artifacts_bucket_name
 from .lib import get_org_managed_ssm_param_value
 from .lib import get_ssm_param_value
+from .permissions import ORG_INFO
 from .permissions import AwsAccountInfo
 from .permissions import AwsSsoPermissionSet
 from .permissions import AwsSsoPermissionSetAccountAssignments
+from .permissions import OrgInfo
 from .permissions import User
+from .permissions import UserAttributes
 from .permissions import UserInfo
 from .permissions import Username
+from .permissions import all_created_users
 
 __all__ = [
     "CENTRAL_NETWORKING_SSM_PREFIX",
@@ -33,6 +37,7 @@ __all__ = [
     "MANAGEMENT_ACCOUNT_ID_PARAM_NAME",
     "MANUAL_IAC_SECRETS_PREFIX",
     "MANUAL_SECRETS_PREFIX",
+    "ORG_INFO",
     "ORG_MANAGED_SSM_PARAM_PREFIX",
     "WORKLOAD_INFO_SSM_PARAM_PREFIX",
     "AwsAccountId",
@@ -41,10 +46,13 @@ __all__ = [
     "AwsSsoPermissionSet",
     "AwsSsoPermissionSetAccountAssignments",
     "Ec2WithRdp",
+    "OrgInfo",
     "User",
+    "UserAttributes",
     "UserInfo",
     "Username",
     "WorkloadName",
+    "all_created_users",
     "get_manual_artifacts_bucket_name",
     "get_org_managed_ssm_param_value",
     "get_ssm_param_value",
