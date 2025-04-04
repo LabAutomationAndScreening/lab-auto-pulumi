@@ -9,8 +9,10 @@ from .constants import MANAGEMENT_ACCOUNT_ID_PARAM_NAME
 from .constants import MANUAL_IAC_SECRETS_PREFIX
 from .constants import MANUAL_SECRETS_PREFIX
 from .constants import ORG_MANAGED_SSM_PARAM_PREFIX
-from .constants import TAG_KEY_FOR_SSO_INTO_EC2_READ_ACCESS
-from .constants import TAG_KEY_FOR_SSO_INTO_EC2_WRITE_ACCESS
+from .constants import TAG_KEY_FOR_SSO_INTO_EC2_ACCESS
+from .constants import TAG_VALUE_FOR_DELETE_ACCESS
+from .constants import TAG_VALUE_FOR_READ_ACCESS
+from .constants import TAG_VALUE_FOR_WRITE_ACCESS
 from .constants import USER_ACCESS_TAG_DELIMITER
 from .constants import WORKLOAD_INFO_SSM_PARAM_PREFIX
 from .ec2 import Ec2WithRdp
@@ -43,8 +45,10 @@ __all__ = [
     "MANUAL_SECRETS_PREFIX",
     "ORG_INFO",
     "ORG_MANAGED_SSM_PARAM_PREFIX",
-    "TAG_KEY_FOR_SSO_INTO_EC2_READ_ACCESS",
-    "TAG_KEY_FOR_SSO_INTO_EC2_WRITE_ACCESS",
+    "TAG_KEY_FOR_SSO_INTO_EC2_ACCESS",
+    "TAG_VALUE_FOR_DELETE_ACCESS",
+    "TAG_VALUE_FOR_READ_ACCESS",
+    "TAG_VALUE_FOR_WRITE_ACCESS",
     "USER_ACCESS_TAG_DELIMITER",
     "WORKLOAD_INFO_SSM_PARAM_PREFIX",
     "AwsAccountId",
