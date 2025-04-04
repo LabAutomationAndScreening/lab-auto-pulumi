@@ -98,7 +98,7 @@ class Ec2WithRdp(ComponentResource):
             user_data=None
             if user_data is None
             else user_data.apply(lambda data: base64.b64encode(data.encode("utf-8")).decode("utf-8")),
-            opts=ResourceOptions(parent=self),
+            opts=ResourceOptions(parent=self, replace_on_changes=["user_data"]),
         )
         if user_data is not None:
             export(f"-user-data-for-{append_resource_suffix(name)}", user_data)

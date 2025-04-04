@@ -9,6 +9,7 @@ from .constants import MANAGEMENT_ACCOUNT_ID_PARAM_NAME
 from .constants import MANUAL_IAC_SECRETS_PREFIX
 from .constants import MANUAL_SECRETS_PREFIX
 from .constants import ORG_MANAGED_SSM_PARAM_PREFIX
+from .constants import SSO_INTO_EC2_PERM_SET_NAME
 from .constants import TAG_KEY_FOR_SSO_INTO_EC2_ACCESS
 from .constants import TAG_VALUE_FOR_DELETE_ACCESS
 from .constants import TAG_VALUE_FOR_READ_ACCESS
@@ -45,6 +46,7 @@ __all__ = [
     "MANUAL_SECRETS_PREFIX",
     "ORG_INFO",
     "ORG_MANAGED_SSM_PARAM_PREFIX",
+    "SSO_INTO_EC2_PERM_SET_NAME",
     "TAG_KEY_FOR_SSO_INTO_EC2_ACCESS",
     "TAG_VALUE_FOR_DELETE_ACCESS",
     "TAG_VALUE_FOR_READ_ACCESS",
