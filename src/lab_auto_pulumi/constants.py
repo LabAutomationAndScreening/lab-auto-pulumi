@@ -11,3 +11,8 @@ MANUAL_SECRETS_PREFIX = "/manually-entered-secrets"
 MANUAL_IAC_SECRETS_PREFIX = f"{MANUAL_SECRETS_PREFIX}/iac"
 GITHUB_DEPLOY_TOKEN_SECRET_NAME = f"{MANUAL_IAC_SECRETS_PREFIX}/github-deploy-access-token"
 GITHUB_PREVIEW_TOKEN_SECRET_NAME = f"{MANUAL_IAC_SECRETS_PREFIX}/github-preview-access-token"
+
+USER_ACCESS_TAG_DELIMITER = "--"
+
+TAG_KEY_FOR_SSO_INTO_EC2_WRITE_ACCESS = "AllowWrite-SsoIntoEc2"  # typically used for S3 buckets
+TAG_KEY_FOR_SSO_INTO_EC2_READ_ACCESS = "AllowRead-SsoIntoEc2"  # typically used for S3 buckets

@@ -5,6 +5,7 @@ from ephemeral_pulumi_deploy import append_resource_suffix
 from ephemeral_pulumi_deploy import common_tags_native
 from pulumi import ComponentResource
 from pulumi import Output
+from pulumi import Resource
 from pulumi import ResourceOptions
 from pulumi import export
 from pulumi_aws.iam import GetPolicyDocumentStatementArgs
@@ -31,12 +32,13 @@ class Ec2WithRdp(ComponentResource):
         root_volume_gb: int | None = None,
         user_data: Output[str] | None = None,
         additional_instance_tags: list[TagArgs] | None = None,
+        security_group_description: str = "Allow all outbound traffic for SSM access",
+        ingress_rules: list[ec2.SecurityGroupIngressArgs] | None = None,
+        # remember for Windows Instances, if you create an ingress rule, you also need to create a Firewall inbound rule on the EC2 instance itself in order for it to actually be accessible
+        parent: Resource | None = None,
     ):
-        super().__init__(
-            "labauto:Ec2WithRdp",
-            append_resource_suffix(name),
-            None,
-        )
+        super().__init__("labauto:Ec2WithRdp", append_resource_suffix(name), None, opts=ResourceOptions(parent=parent))
+
         if additional_instance_tags is None:
             additional_instance_tags = []
         resource_name = f"{name}-ec2"
@@ -63,16 +65,17 @@ class Ec2WithRdp(ComponentResource):
             roles=[self.instance_role.role_name],  # type: ignore[reportArgumentType] # pyright thinks only inputs can be set as role names, but Outputs seem to work fine
             opts=ResourceOptions(parent=self),
         )
-        sg = ec2.SecurityGroup(
+        self.security_group = ec2.SecurityGroup(
             append_resource_suffix(name),
             vpc_id=get_org_managed_ssm_param_value(
                 f"/org-managed/central-networking/vpcs/{central_networking_vpc_name}/id"
             ),
-            group_description="Allow all outbound traffic for SSM access",
+            group_description=security_group_description,
             security_group_egress=[  # TODO: see if this can be further restricted
                 ec2.SecurityGroupEgressArgs(ip_protocol="-1", from_port=0, to_port=0, cidr_ip="0.0.0.0/0")
             ],
-            tags=common_tags_native(),
+            security_group_ingress=ingress_rules,
+            tags=[TagArgs(key="Name", value=name), *common_tags_native()],
             opts=ResourceOptions(parent=self),
         )
         self.instance = ec2.Instance(
@@ -82,7 +85,7 @@ class Ec2WithRdp(ComponentResource):
             subnet_id=get_org_managed_ssm_param_value(
                 f"/org-managed/central-networking/subnets/{central_networking_subnet_name}/id"
             ),
-            security_group_ids=[sg.id],
+            security_group_ids=[self.security_group.id],
             block_device_mappings=None
             if root_volume_gb is None
             else [
