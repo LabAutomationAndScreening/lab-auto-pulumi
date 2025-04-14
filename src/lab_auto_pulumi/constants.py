@@ -14,5 +14,8 @@ GITHUB_PREVIEW_TOKEN_SECRET_NAME = f"{MANUAL_IAC_SECRETS_PREFIX}/github-preview-
 
 USER_ACCESS_TAG_DELIMITER = "--"
 
-TAG_KEY_FOR_SSO_INTO_EC2_WRITE_ACCESS = "AllowWrite-SsoIntoEc2"  # typically used for S3 buckets
-TAG_KEY_FOR_SSO_INTO_EC2_READ_ACCESS = "AllowRead-SsoIntoEc2"  # typically used for S3 buckets
+SSO_INTO_EC2_PERM_SET_NAME = "SsoIntoEc2"
+TAG_KEY_FOR_SSO_INTO_EC2_ACCESS = "SsoIntoEc2AccessLevel"  # note: S3 Buckets and Objects do not support condition keys, so use a bucket policy instead
+TAG_VALUE_FOR_READ_ACCESS = "Read"
+TAG_VALUE_FOR_WRITE_ACCESS = "Write"
+TAG_VALUE_FOR_DELETE_ACCESS = "Delete"
