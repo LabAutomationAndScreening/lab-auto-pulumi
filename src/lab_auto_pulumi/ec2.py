@@ -79,7 +79,7 @@ class Ec2WithRdp(ComponentResource):
             opts=ResourceOptions(parent=self),
         )
         for idx, rule_args in enumerate(ingress_rules):
-            _ = ec2.SecurityGroupIngress(  # TODO: see if this can be further restricted
+            _ = ec2.SecurityGroupIngress(
                 append_resource_suffix(f"{name}-ingress-{idx}", max_length=190),
                 opts=ResourceOptions(parent=self.security_group),
                 ip_protocol=rule_args.ip_protocol,
