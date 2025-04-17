@@ -40,6 +40,8 @@ class Ec2WithRdp(ComponentResource):
     ):
         super().__init__("labauto:Ec2WithRdp", append_resource_suffix(name), None, opts=ResourceOptions(parent=parent))
         self.name = name
+        if ingress_rules is None:
+            ingress_rules = []
         if additional_instance_tags is None:
             additional_instance_tags = []
         resource_name = f"{name}-ec2"
@@ -72,12 +74,28 @@ class Ec2WithRdp(ComponentResource):
                 f"{CENTRAL_NETWORKING_SSM_PREFIX}/vpcs/{central_networking_vpc_name}/id"
             ),
             group_description=security_group_description,
-            security_group_egress=[  # TODO: see if this can be further restricted
-                ec2.SecurityGroupEgressArgs(ip_protocol="-1", from_port=0, to_port=0, cidr_ip="0.0.0.0/0")
-            ],
             security_group_ingress=ingress_rules,
             tags=[TagArgs(key="Name", value=name), *common_tags_native()],
             opts=ResourceOptions(parent=self),
+        )
+        for idx, rule_args in enumerate(ingress_rules):
+            _ = ec2.SecurityGroupIngress(  # TODO: see if this can be further restricted
+                append_resource_suffix(f"{name}-ingress-{idx}", max_length=190),
+                opts=ResourceOptions(parent=self.security_group),
+                ip_protocol=rule_args.ip_protocol,
+                from_port=rule_args.from_port,
+                to_port=rule_args.to_port,
+                source_security_group_id=rule_args.source_security_group_id,
+                group_id=self.security_group.id,
+            )
+        _ = ec2.SecurityGroupEgress(  # TODO: see if this can be further restricted
+            append_resource_suffix(f"{name}-egress", max_length=190),
+            opts=ResourceOptions(parent=self.security_group),
+            ip_protocol="-1",
+            from_port=0,
+            to_port=0,
+            cidr_ip="0.0.0.0/0",
+            group_id=self.security_group.id,
         )
         self.instance = ec2.Instance(
             append_resource_suffix(name),
