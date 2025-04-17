@@ -15,6 +15,7 @@ from pulumi_aws_native import TagArgs
 from pulumi_aws_native import ec2
 from pulumi_aws_native import iam
 
+from .constants import CENTRAL_NETWORKING_SSM_PREFIX
 from .lib import get_org_managed_ssm_param_value
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ class Ec2WithRdp(ComponentResource):
         parent: Resource | None = None,
     ):
         super().__init__("labauto:Ec2WithRdp", append_resource_suffix(name), None, opts=ResourceOptions(parent=parent))
-
+        self.name = name
         if additional_instance_tags is None:
             additional_instance_tags = []
         resource_name = f"{name}-ec2"
@@ -68,7 +69,7 @@ class Ec2WithRdp(ComponentResource):
         self.security_group = ec2.SecurityGroup(
             append_resource_suffix(name),
             vpc_id=get_org_managed_ssm_param_value(
-                f"/org-managed/central-networking/vpcs/{central_networking_vpc_name}/id"
+                f"{CENTRAL_NETWORKING_SSM_PREFIX}/vpcs/{central_networking_vpc_name}/id"
             ),
             group_description=security_group_description,
             security_group_egress=[  # TODO: see if this can be further restricted
@@ -83,7 +84,7 @@ class Ec2WithRdp(ComponentResource):
             instance_type=instance_type,
             image_id=image_id,
             subnet_id=get_org_managed_ssm_param_value(
-                f"/org-managed/central-networking/subnets/{central_networking_subnet_name}/id"
+                f"{CENTRAL_NETWORKING_SSM_PREFIX}/subnets/{central_networking_subnet_name}/id"
             ),
             security_group_ids=[self.security_group.id],
             block_device_mappings=None
