@@ -1,6 +1,6 @@
 [project]
 name = "lab-auto-pulumi"
-version = "0.1.8"
+version = "0.1.9"
 description = "Pulumi helpers. Especially useful for tooling created by the LabAutomationAndScreening github organization."
 authors = [
     {name = "Eli Fine"},
