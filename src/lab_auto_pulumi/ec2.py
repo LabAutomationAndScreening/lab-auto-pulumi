@@ -30,15 +30,17 @@ class Ec2WithRdp(ComponentResource):
         instance_type: str,
         image_id: str,
         central_networking_vpc_name: str,
-        root_volume_gb: int | None = None,
+        root_volume_gb: int = 30,
         user_data: Output[str] | None = None,
         additional_instance_tags: list[TagArgs] | None = None,
         security_group_description: str = "Allow all outbound traffic for SSM access",
         ingress_rules: list[ec2.SecurityGroupIngressArgs] | None = None,
+        persist_user_data: bool = False,  # if false, then user data changes will result in replacing the instance. if true, then you can replace the user data, but it will force an immediate restart of the EC2...which may not actually show up in the Pulumi plan
         # remember for Windows Instances, if you create an ingress rule, you also need to create a Firewall inbound rule on the EC2 instance itself in order for it to actually be accessible
         parent: Resource | None = None,
     ):
         super().__init__("labauto:Ec2WithRdp", append_resource_suffix(name), None, opts=ResourceOptions(parent=parent))
+        replace_on_changes = ["user_data"] if not persist_user_data else []
         self.name = name
         if ingress_rules is None:
             ingress_rules = []
@@ -105,11 +107,9 @@ class Ec2WithRdp(ComponentResource):
                 f"{CENTRAL_NETWORKING_SSM_PREFIX}/subnets/{central_networking_subnet_name}/id"
             ),
             security_group_ids=[self.security_group.id],
-            block_device_mappings=None
-            if root_volume_gb is None
-            else [
+            block_device_mappings=[
                 ec2.InstanceBlockDeviceMappingArgs(
-                    device_name="/dev/sda1", ebs=ec2.InstanceEbsArgs(volume_size=root_volume_gb)
+                    device_name="/dev/sda1", ebs=ec2.InstanceEbsArgs(volume_size=root_volume_gb, volume_type="gp3")
                 )
             ],
             iam_instance_profile=instance_profile.instance_profile_name,  # type: ignore[reportArgumentType] # pyright thinks only inputs can be set as instance profile names, but Outputs seem to work fine
@@ -117,7 +117,7 @@ class Ec2WithRdp(ComponentResource):
             user_data=None
             if user_data is None
             else user_data.apply(lambda data: base64.b64encode(data.encode("utf-8")).decode("utf-8")),
-            opts=ResourceOptions(parent=self, replace_on_changes=["user_data"]),
+            opts=ResourceOptions(parent=self, replace_on_changes=replace_on_changes),
         )
         if user_data is not None:
             export(f"-user-data-for-{append_resource_suffix(name)}", user_data)
