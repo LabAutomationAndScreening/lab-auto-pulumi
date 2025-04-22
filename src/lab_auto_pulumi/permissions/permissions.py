@@ -1,6 +1,7 @@
 import logging
 
 from ephemeral_pulumi_deploy import common_tags
+from ephemeral_pulumi_deploy import get_config_str
 from pulumi import ComponentResource
 from pulumi import ResourceOptions
 from pulumi_aws import identitystore as identitystore_classic
@@ -48,6 +49,8 @@ class AwsSsoPermissionSet(ComponentResource):
         relay_state: str | None = None,
     ):
         super().__init__("labauto:AwsSsoPermissionSet", name, None)
+        if relay_state is None:
+            relay_state = f"https://{get_config_str('proj:aws_org_home_region')}.console.aws.amazon.com/console/home"
         if managed_policies is None:
             managed_policies = []
         self.name = name
