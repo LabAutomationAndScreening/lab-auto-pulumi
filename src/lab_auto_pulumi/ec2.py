@@ -78,7 +78,6 @@ class Ec2WithRdp(ComponentResource):
                 f"{CENTRAL_NETWORKING_SSM_PREFIX}/vpcs/{central_networking_vpc_name}/id"
             ),
             group_description=security_group_description,
-            security_group_ingress=ingress_rules,
             tags=[TagArgs(key="Name", value=name), *common_tags_native()],
             opts=ResourceOptions(parent=self),
         )
