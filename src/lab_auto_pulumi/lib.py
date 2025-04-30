@@ -10,6 +10,21 @@ type WorkloadName = str
 type AwsAccountId = str
 
 
+def create_resource_name_safe_str(name: str) -> str:
+    return (
+        name.lower()
+        .replace(" ", "-")
+        .replace(":", "-")
+        .replace("(", "-")
+        .replace(")", "-")
+        .replace("'", "-")
+        .replace('"', "-")
+        .replace("/", "-")
+        .replace(chr(92), "-")  # backslash
+        .replace("=", "-")
+    )
+
+
 def get_ssm_param_value(
     param_name: str, *, ssm_client: SSMClient | None = None, session: boto3.Session | None = None
 ) -> str:
