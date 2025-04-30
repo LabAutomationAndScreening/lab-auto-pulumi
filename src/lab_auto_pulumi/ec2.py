@@ -16,6 +16,7 @@ from pulumi_aws_native import ec2
 from pulumi_aws_native import iam
 
 from .constants import CENTRAL_NETWORKING_SSM_PREFIX
+from .lib import create_resource_name_safe_str
 from .lib import get_org_managed_ssm_param_value
 
 logger = logging.getLogger(__name__)
@@ -82,8 +83,17 @@ class Ec2WithRdp(ComponentResource):
             opts=ResourceOptions(parent=self),
         )
         for idx, rule_args in enumerate(ingress_rules):
+            if not rule_args.description:
+                raise ValueError(  # noqa: TRY003 # not worth making a custom exception for this...especially until we figure out how to test Pulumi components
+                    f"Security group ingress rule index {idx} must have a description ({rule_args})"
+                )
+            assert isinstance(rule_args.description, str), (
+                f"Expected str but got type {type(rule_args.description)} for {rule_args.description}"
+            )
+            resource_safe_description = create_resource_name_safe_str(rule_args.description)
+
             _ = ec2.SecurityGroupIngress(
-                append_resource_suffix(f"{name}-ingress-{idx}", max_length=190),
+                append_resource_suffix(f"{name}-ingress-{resource_safe_description}", max_length=190),
                 opts=ResourceOptions(parent=self.security_group),
                 ip_protocol=rule_args.ip_protocol,
                 from_port=rule_args.from_port,

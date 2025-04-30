@@ -20,6 +20,7 @@ from .ec2 import Ec2WithRdp
 from .lib import AwsAccountId
 from .lib import AwsLogicalWorkload
 from .lib import WorkloadName
+from .lib import create_resource_name_safe_str
 from .lib import get_manual_artifacts_bucket_name
 from .lib import get_org_managed_ssm_param_value
 from .lib import get_ssm_param_value
@@ -67,6 +68,7 @@ __all__ = [
     "WorkloadName",
     "all_created_users",
     "constants",
+    "create_resource_name_safe_str",
     "get_manual_artifacts_bucket_name",
     "get_org_managed_ssm_param_value",
     "get_ssm_param_value",
