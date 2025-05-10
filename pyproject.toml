@@ -33,8 +33,8 @@ dev = [
     "boto3-stubs[all]==1.36.3", # there's a bug/conflict in 1.37.4 affecting pyright: https://github.com/LabAutomationAndScreening/copier-cloud-courier-infrastructure/actions/runs/13596390146/job/38014193360#step:11:69
 
     # Managed by upstream template
-    "pyright>=1.1.397",
-    "pytest>=8.3.4",
+    "pyright>=1.1.400",
+    "pytest>=8.3.5",
     "pytest-cov>=6.0.0",
     "pytest-randomly>=3.16.0",
 

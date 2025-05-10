@@ -50,12 +50,12 @@ def get_manual_artifacts_bucket_name() -> str:
 class AwsLogicalWorkload(BaseModel):
     version: str = "0.0.1"
     name: str
-    prod_accounts: list[AwsAccountInfo] = Field(
+    prod_accounts: list[AwsAccountInfo] = Field(  # type: ignore[reportUnknownVariableType] # some bug in pyright around 1.1.400 is causing default_factory=list to be unknown
         default_factory=list
     )  # TODO: convert to a set with deterministic ordering to avoid false positive diffs
-    staging_accounts: list[AwsAccountInfo] = Field(
+    staging_accounts: list[AwsAccountInfo] = Field(  # type: ignore[reportUnknownVariableType] # some bug in pyright around 1.1.400 is causing default_factory=list to be unknown
         default_factory=list
     )  # TODO: convert to a set with deterministic ordering to avoid false positive diffs
-    dev_accounts: list[AwsAccountInfo] = Field(
+    dev_accounts: list[AwsAccountInfo] = Field(  # type: ignore[reportUnknownVariableType] # some bug in pyright around 1.1.400 is causing default_factory=list to be unknown
         default_factory=list
     )  # TODO: convert to a set with deterministic ordering to avoid false positive diffs
