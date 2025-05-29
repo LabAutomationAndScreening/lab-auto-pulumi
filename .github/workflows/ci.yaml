@@ -51,7 +51,7 @@ jobs:
         uses: actions/checkout@v4.2.2
 
       - name: Install python tooling
-        uses: ./.github/actions/install_deps_uv
+        uses: ./.github/actions/install_deps
         with:
           python-version: ${{ matrix.python-version }}
 
