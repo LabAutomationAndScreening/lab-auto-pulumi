@@ -18,6 +18,8 @@ def create_resource_name_safe_str(name: str) -> str:
         .replace("/", "-")
         .replace(chr(92), "-")  # backslash
         .replace("=", "-")
+        .replace("@", "-")
+        .replace(".", "-")
     )
 
 
