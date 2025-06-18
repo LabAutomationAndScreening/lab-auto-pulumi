@@ -7,6 +7,8 @@ from pulumi_aws import ssoadmin
 from pydantic import BaseModel
 from pydantic import Field
 
+from ..lib import create_resource_name_safe_str
+
 
 class AwsAccountInfo(BaseModel, frozen=True):
     version: str = "0.0.1"
@@ -63,7 +65,7 @@ class User(BaseModel):  # NOT RECOMMENDED TO USE THIS IF YOU HAVE AN EXTERNAL ID
         self._user = identitystore_classic.User(
             f"{self.first_name}-{self.last_name}"
             if self.use_deprecated_username_format
-            else self.username.replace("@", "-").replace(".", "-"),
+            else create_resource_name_safe_str(self.username),
             identity_store_id=ORG_INFO.identity_store_id,
             display_name=f"{self.first_name} {self.last_name}",
             user_name=self.username,
