@@ -141,7 +141,7 @@ jobs:
         with:
           time: 60s
       - name: Install from staging registry
-        run: pip install -i https://test.pypi.org/simple/ lab-auto-pulumi==${{ needs.get-values.outputs.package-version }}
+        run: pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://www.pypi.org/simple lab-auto-pulumi==${{ needs.get-values.outputs.package-version }}
       - name: Confirm library can be imported successfully
         run: python -c "import lab_auto_pulumi"
 

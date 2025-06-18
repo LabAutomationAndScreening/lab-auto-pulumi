@@ -1,6 +1,6 @@
 [project]
 name = "lab-auto-pulumi"
-version = "0.1.13"
+version = "0.1.14"
 description = "Pulumi helpers. Especially useful for tooling created by the LabAutomationAndScreening github organization."
 authors = [
     {name = "Eli Fine"},
@@ -30,12 +30,14 @@ dependencies = [
 dev = [
     # Specific to this repository
 
+
     "boto3-stubs[all]>=1.37.11",
 
+
     # Managed by upstream template
-    "pyright==1.1.400", # temporarily pin due to bug in 1.1.401 https://github.com/microsoft/pyright/issues/10487
-    "pytest>=8.3.5",
-    "pytest-cov>=6.1.1",
+    "pyright>=1.1.402",
+    "pytest>=8.4.0",
+    "pytest-cov>=6.2.1",
     "pytest-randomly>=3.16.0",
 
 
