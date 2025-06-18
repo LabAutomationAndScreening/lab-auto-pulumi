@@ -18,7 +18,6 @@ from .constants import USER_ACCESS_TAG_DELIMITER
 from .constants import WORKLOAD_INFO_SSM_PARAM_PREFIX
 from .ec2 import Ec2WithRdp
 from .lib import AwsAccountId
-from .lib import AwsLogicalWorkload
 from .lib import WorkloadName
 from .lib import create_resource_name_safe_str
 from .lib import get_manual_artifacts_bucket_name
@@ -34,6 +33,7 @@ from .permissions import UserAttributes
 from .permissions import UserInfo
 from .permissions import Username
 from .permissions import all_created_users
+from .workload import AwsLogicalWorkload
 
 __all__ = [
     "CENTRAL_NETWORKING_SSM_PREFIX",

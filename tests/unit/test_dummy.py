@@ -10,10 +10,10 @@ import pulumi.runtime
 class MyMocks(pulumi.runtime.Mocks):
     @override
     def new_resource(self, args: pulumi.runtime.MockResourceArgs) -> tuple[str | None, dict[Any, Any]]:
-        args.inputs = cast("dict[Any, Any]", args.inputs)  # type: ignore[reportUnknownMemberType] # the underlying library is not fully typed
+        args.inputs = cast("dict[Any, Any]", args.inputs)  # pyright: ignore[reportUnknownMemberType] # the underlying library is not fully typed
         return (
             args.name + "_id",
-            args.inputs,  # type: ignore[reportUnknownVariableType] # the underlying library is not fully typed...and I'm not sure why the `cast` above isn't helping
+            args.inputs,  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType] # the underlying library is not fully typed...and I'm not sure why the `cast` above isn't helping
         )
 
     @override

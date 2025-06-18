@@ -37,6 +37,7 @@ class Ec2WithRdp(ComponentResource):
         additional_instance_tags: list[TagArgs] | None = None,
         security_group_description: str = "Allow all outbound traffic for SSM access",
         ingress_rules: list[ec2.SecurityGroupIngressArgs] | None = None,
+        export_user_data: bool = True,
         persist_user_data: bool = False,  # if false, then user data changes will result in replacing the instance (because new user data won't take effect unless the instance is replaced). if true, then you can replace the user data, but it will force an immediate restart of the EC2...which may not actually show up in the Pulumi plan
         # TODO: maybe ensure that the persist flag in the user data XML has been set, or add it automatically if it hasn't (when persist_user_data set to true)
         # remember for Windows Instances, if you create an ingress rule, you also need to create a Firewall inbound rule on the EC2 instance itself in order for it to actually be accessible
@@ -70,7 +71,7 @@ class Ec2WithRdp(ComponentResource):
 
         instance_profile = iam.InstanceProfile(
             append_resource_suffix(name),
-            roles=[self.instance_role.role_name],  # type: ignore[reportArgumentType] # pyright thinks only inputs can be set as role names, but Outputs seem to work fine
+            roles=[self.instance_role.role_name],  # pyright: ignore[reportArgumentType] # pyright thinks only inputs can be set as role names, but Outputs seem to work fine
             opts=ResourceOptions(parent=self),
         )
         self.security_group = ec2.SecurityGroup(
@@ -123,12 +124,12 @@ class Ec2WithRdp(ComponentResource):
                     device_name="/dev/sda1", ebs=ec2.InstanceEbsArgs(volume_size=root_volume_gb, volume_type="gp3")
                 )
             ],
-            iam_instance_profile=instance_profile.instance_profile_name,  # type: ignore[reportArgumentType] # pyright thinks only inputs can be set as instance profile names, but Outputs seem to work fine
+            iam_instance_profile=instance_profile.instance_profile_name,  # pyright: ignore[reportArgumentType] # pyright thinks only inputs can be set as instance profile names, but Outputs seem to work fine
             tags=[TagArgs(key="Name", value=name), *additional_instance_tags, *common_tags_native()],
             user_data=None
             if user_data is None
             else user_data.apply(lambda data: base64.b64encode(data.encode("utf-8")).decode("utf-8")),
             opts=ResourceOptions(parent=self, replace_on_changes=replace_on_changes),
         )
-        if user_data is not None:
+        if user_data is not None and export_user_data:
             export(f"-user-data-for-{append_resource_suffix(name)}", user_data)

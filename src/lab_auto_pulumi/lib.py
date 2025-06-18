@@ -1,10 +1,6 @@
 import boto3
 from ephemeral_pulumi_deploy import get_config_str
 from mypy_boto3_ssm import SSMClient
-from pydantic import BaseModel
-from pydantic import Field
-
-from .permissions import AwsAccountInfo
 
 type WorkloadName = str
 type AwsAccountId = str
@@ -22,6 +18,8 @@ def create_resource_name_safe_str(name: str) -> str:
         .replace("/", "-")
         .replace(chr(92), "-")  # backslash
         .replace("=", "-")
+        .replace("@", "-")
+        .replace(".", "-")
     )
 
 
@@ -45,17 +43,3 @@ def get_org_managed_ssm_param_value(param_name: str) -> str:
 
 def get_manual_artifacts_bucket_name() -> str:
     return get_org_managed_ssm_param_value("/org-managed/manual-artifacts-bucket-name")
-
-
-class AwsLogicalWorkload(BaseModel):
-    version: str = "0.0.1"
-    name: str
-    prod_accounts: list[AwsAccountInfo] = Field(  # type: ignore[reportUnknownVariableType] # some bug in pyright around 1.1.400 is causing default_factory=list to be unknown
-        default_factory=list
-    )  # TODO: convert to a set with deterministic ordering to avoid false positive diffs
-    staging_accounts: list[AwsAccountInfo] = Field(  # type: ignore[reportUnknownVariableType] # some bug in pyright around 1.1.400 is causing default_factory=list to be unknown
-        default_factory=list
-    )  # TODO: convert to a set with deterministic ordering to avoid false positive diffs
-    dev_accounts: list[AwsAccountInfo] = Field(  # type: ignore[reportUnknownVariableType] # some bug in pyright around 1.1.400 is causing default_factory=list to be unknown
-        default_factory=list
-    )  # TODO: convert to a set with deterministic ordering to avoid false positive diffs
