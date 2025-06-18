@@ -53,6 +53,7 @@ class User(BaseModel):  # NOT RECOMMENDED TO USE THIS IF YOU HAVE AN EXTERNAL ID
     first_name: str
     last_name: str
     email: str
+    use_deprecated_username_format: bool = False
     user_attributes: UserAttributes = Field(default_factory=UserAttributes)
     _user: identitystore_classic.User | None = None
 
@@ -60,7 +61,9 @@ class User(BaseModel):  # NOT RECOMMENDED TO USE THIS IF YOU HAVE AN EXTERNAL ID
     def model_post_init(self, _: Any) -> None:
         all_created_users[self.username] = UserInfo(username=self.username, attributes=self.user_attributes)
         self._user = identitystore_classic.User(
-            f"{self.first_name}-{self.last_name}",
+            f"{self.first_name}-{self.last_name}"
+            if self.use_deprecated_username_format
+            else self.username.replace("@", "-").replace(".", "-"),
             identity_store_id=ORG_INFO.identity_store_id,
             display_name=f"{self.first_name} {self.last_name}",
             user_name=self.username,
@@ -73,7 +76,9 @@ class User(BaseModel):  # NOT RECOMMENDED TO USE THIS IF YOU HAVE AN EXTERNAL ID
 
     @property
     def username(self) -> Username:
-        return f"{self.first_name}.{self.last_name}"
+        if self.use_deprecated_username_format:
+            return f"{self.first_name}.{self.last_name}"
+        return self.email
 
     @property
     def user(self) -> identitystore_classic.User:
