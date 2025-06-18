@@ -1,6 +1,6 @@
 [project]
 name = "lab-auto-pulumi"
-version = "0.1.14"
+version = "0.1.15"
 description = "Pulumi helpers. Especially useful for tooling created by the LabAutomationAndScreening github organization."
 authors = [
     {name = "Eli Fine"},
@@ -22,6 +22,7 @@ dependencies = [
     "pulumi-aws-native>=1.26.0",
     "ephemeral-pulumi-deploy>=0.0.4",
     "boto3>=1.37.11",
+    "boto3-stubs[ssm]>=1.37.11",
     "pydantic>=2.10.6",
 ]
 
