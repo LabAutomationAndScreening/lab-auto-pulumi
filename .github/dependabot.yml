@@ -9,10 +9,39 @@ updates:
       time: "16:00"
     open-pull-requests-limit: 5
     ignore:
-      - dependency-name: "boto3" # boto3 gets patch updates way too frequently and they're usually not important
+      - dependency-name: "*"
         update-types:
-          - "version-update:semver-patch"
+          - "version-update:semver-patch" # we don't want to be bothered with patch updates for anything except security updates
       - dependency-name: "sphinx*" # read-the-docs uses specific versions of sphinx, so we generally want to stay tightly pinned unless there's a major version change
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
+      # ignore production dependencies except for major updates, to ensure maximum compatibility with users of this library. As of 2025-07-21 there doesn't appear to be a way to specify these with a setting instead of enumerating them individually
+      - dependency-name: "pulumi"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
+      - dependency-name: "pulumi-aws"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
+      - dependency-name: "pulumi-aws-native"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
+      - dependency-name: "ephemeral-pulumi-deploy"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
+      - dependency-name: "boto3"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
+      - dependency-name: "boto3-stubs"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
+      - dependency-name: "pydantic"
         update-types:
           - "version-update:semver-minor"
           - "version-update:semver-patch"
