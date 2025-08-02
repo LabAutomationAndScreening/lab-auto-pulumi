@@ -31,13 +31,12 @@ dependencies = [
 dev = [
     # Specific to this repository
 
-
     "boto3-stubs[all]>=1.37.11",
 
 
     # Managed by upstream template
-    "pyright>=1.1.402",
-    "pytest>=8.4.0",
+    "pyright>=1.1.403",
+    "pytest>=8.4.1",
     "pytest-cov>=6.2.1",
     "pytest-randomly>=3.16.0",
 
