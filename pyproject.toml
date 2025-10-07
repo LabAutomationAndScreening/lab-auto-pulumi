@@ -1,6 +1,6 @@
 [project]
 name = "lab-auto-pulumi"
-version = "0.1.16"
+version = "0.1.17"
 description = "Pulumi helpers. Especially useful for tooling created by the LabAutomationAndScreening github organization."
 authors = [
     {name = "Eli Fine"},
@@ -33,12 +33,11 @@ dev = [
 
     "boto3-stubs[all]>=1.40.9",
 
-
     # Managed by upstream template
-    "pyright>=1.1.403",
-    "pytest>=8.4.1",
-    "pytest-cov>=6.2.1",
-    "pytest-randomly>=3.16.0",
+    "pyright>=1.1.405",
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
+    "pytest-randomly>=4.0.1",
 
 
 ]
