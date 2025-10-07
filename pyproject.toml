@@ -33,12 +33,11 @@ dev = [
 
     "boto3-stubs[all]>=1.40.9",
 
-
     # Managed by upstream template
-    "pyright>=1.1.403",
-    "pytest>=8.4.1",
-    "pytest-cov>=6.2.1",
-    "pytest-randomly>=3.16.0",
+    "pyright>=1.1.405",
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
+    "pytest-randomly>=4.0.1",
 
 
 ]
