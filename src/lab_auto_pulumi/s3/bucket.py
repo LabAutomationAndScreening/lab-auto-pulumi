@@ -35,15 +35,15 @@ def create_worm_bucket(
 
 
 class ManualArtifactsBucket(ComponentResource):
-    def __init__(
-        self,
-    ):
+    def __init__(self, *, additional_tags: list[TagArgs] | None = None):
         super().__init__("labauto:ManualArtifactsBucket", append_resource_suffix(), None)
+        if additional_tags is None:
+            additional_tags = []
         # These artifacts are deployed to machines and devices. It's too much of a security risk to let people overwrite them, so setting up WORM.
         self.bucket = create_worm_bucket(
             resource_name="manual-artifacts",
             parent=self,
-            additional_tags=[TagArgs(key="manual-artifacts-bucket", value="")],
+            additional_tags=[TagArgs(key="manual-artifacts-bucket", value=""), *additional_tags],
         )
         org_id = get_organization().id
         _ = s3.BucketPolicy(
