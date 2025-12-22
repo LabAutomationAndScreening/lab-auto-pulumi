@@ -6,6 +6,7 @@ from pulumi import ComponentResource
 from pulumi import ResourceOptions
 from pulumi_aws import identitystore as identitystore_classic
 from pulumi_aws import ssoadmin
+from pulumi_aws.iam import GetPolicyDocumentStatementConditionArgs
 
 from .lib import ORG_INFO
 from .lib import AwsAccountInfo
@@ -18,6 +19,14 @@ logger = logging.getLogger(__name__)
 class UserNotFoundInIdentityStoreError(ValueError):
     def __init__(self, username: Username):
         super().__init__(f"User {username!r} not found in the Identity Store")
+
+
+def principal_in_org_condition(org_id: str) -> GetPolicyDocumentStatementConditionArgs:
+    return GetPolicyDocumentStatementConditionArgs(
+        values=[org_id],
+        variable="aws:PrincipalOrgID",
+        test="StringEquals",
+    )
 
 
 def lookup_user_id(username: Username) -> str:

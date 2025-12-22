@@ -23,6 +23,7 @@ from .lib import create_resource_name_safe_str
 from .lib import get_manual_artifacts_bucket_name
 from .lib import get_org_managed_ssm_param_value
 from .lib import get_ssm_param_value
+from .organization import OrganizationInfo
 from .permissions import ORG_INFO
 from .permissions import AwsAccountInfo
 from .permissions import AwsSsoPermissionSet
@@ -33,6 +34,9 @@ from .permissions import UserAttributes
 from .permissions import UserInfo
 from .permissions import Username
 from .permissions import all_created_users
+from .permissions import principal_in_org_condition
+from .s3 import ManualArtifactsBucket
+from .s3 import create_worm_bucket
 from .workload import AwsLogicalWorkload
 
 __all__ = [
@@ -60,7 +64,9 @@ __all__ = [
     "AwsSsoPermissionSet",
     "AwsSsoPermissionSetAccountAssignments",
     "Ec2WithRdp",
+    "ManualArtifactsBucket",
     "OrgInfo",
+    "OrganizationInfo",
     "User",
     "UserAttributes",
     "UserInfo",
@@ -69,7 +75,9 @@ __all__ = [
     "all_created_users",
     "constants",
     "create_resource_name_safe_str",
+    "create_worm_bucket",
     "get_manual_artifacts_bucket_name",
     "get_org_managed_ssm_param_value",
     "get_ssm_param_value",
+    "principal_in_org_condition",
 ]

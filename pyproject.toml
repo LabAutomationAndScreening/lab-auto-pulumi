@@ -1,6 +1,6 @@
 [project]
 name = "lab-auto-pulumi"
-version = "0.1.17"
+version = "0.1.18"
 description = "Pulumi helpers. Especially useful for tooling created by the LabAutomationAndScreening github organization."
 authors = [
     {name = "Eli Fine"},
@@ -15,15 +15,17 @@ classifiers = [
 
     "Programming Language :: Python :: 3.13",
 
+    "Programming Language :: Python :: 3.14",
+
 ]
 dependencies = [
-    "pulumi>=3.190.0",
-    "pulumi-aws>=7.5.0",
-    "pulumi-aws-native>=1.32.0",
-    "ephemeral-pulumi-deploy>=0.0.5",
-    "boto3>=1.40.9",
-    "boto3-stubs[ssm]>=1.40.9",
-    "pydantic>=2.11.7",
+    "pulumi>=3.213.0",
+    "pulumi-aws>=7.15.0",
+    "pulumi-aws-native>=1.45.0",
+    "ephemeral-pulumi-deploy>=0.0.6",
+    "boto3>=1.42.14",
+    "boto3-stubs[ssm]>=1.42.14",
+    "pydantic>=2.12.5",
 ]
 
 
@@ -31,15 +33,13 @@ dependencies = [
 dev = [
     # Specific to this repository
 
-    "boto3-stubs[all]>=1.40.9",
+    "boto3-stubs[all]", # version specification is in main dependencies already
 
     # Managed by upstream template
-    "pyright>=1.1.405",
-    "pytest>=8.4.2",
+    "pyright>=1.1.407",
+    "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
     "pytest-randomly>=4.0.1",
-
-
 ]
 
 [tool.setuptools]
