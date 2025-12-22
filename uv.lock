@@ -619,7 +619,7 @@ wheels = [
 
 [[package]]
 name = "ephemeral-pulumi-deploy"
-version = "0.0.5"
+version = "0.0.6"
 source = { registry = "https://pypi.org/simple/" }
 dependencies = [
     { name = "boto3" },
@@ -627,9 +627,9 @@ dependencies = [
     { name = "pulumi-aws" },
     { name = "pulumi-aws-native" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/25/bb/f185c984a5912e29cd63809cff4cd948d8007df387b6404377359c5b4275/ephemeral_pulumi_deploy-0.0.5.tar.gz", hash = "sha256:35b771a5387661d1a75dedac6c845d64c522637d4141937ffcdf9fb2738e36ff", size = 8279, upload-time = "2025-08-25T13:22:23.239Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/60/a3/c7fee57b9ac59eb8bbf1203dcf3b177afde97ab4f63443a5bc7f2f9008b8/ephemeral_pulumi_deploy-0.0.6.tar.gz", hash = "sha256:34398b075771d776af523b9041d7393c768280f0444531a8f23f4b81fdb6538e", size = 8337, upload-time = "2025-12-22T14:06:18.999Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/71/e9/770a5449aee346a3e80b9c0ea5eba744739b3972f3dd76f4d27a275e2033/ephemeral_pulumi_deploy-0.0.5-py3-none-any.whl", hash = "sha256:7a2f95c671ceb3ceb8c0155e14496a4ad08101ad77f034ad4fe9917328e2b68d", size = 8004, upload-time = "2025-08-25T13:22:22.122Z" },
+    { url = "https://files.pythonhosted.org/packages/5b/40/fd8395b7e23b4287dcb7a842dca035145843057dd42f5c54bf88bff3323d/ephemeral_pulumi_deploy-0.0.6-py3-none-any.whl", hash = "sha256:bbffbd160eef491808758ff9c6c171cbb03d2340ba71f65e7e3b3b5e875a5528", size = 8039, upload-time = "2025-12-22T14:06:18.298Z" },
 ]
 
 [[package]]
@@ -752,7 +752,7 @@ dev = [
 requires-dist = [
     { name = "boto3", specifier = ">=1.42.14" },
     { name = "boto3-stubs", extras = ["ssm"], specifier = ">=1.42.14" },
-    { name = "ephemeral-pulumi-deploy", specifier = ">=0.0.5" },
+    { name = "ephemeral-pulumi-deploy", specifier = ">=0.0.6" },
     { name = "pulumi", specifier = ">=3.213.0" },
     { name = "pulumi-aws", specifier = ">=7.15.0" },
     { name = "pulumi-aws-native", specifier = ">=1.45.0" },
