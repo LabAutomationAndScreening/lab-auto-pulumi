@@ -43,17 +43,20 @@ jobs:
 
           - 3.13.2
 
+          - 3.14.0
+
         include:
           - os: "ubuntu-24.04"
             python-version: "3.12.7"
             JOB_MATCHING_DEV_ENV: true
 
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
     env:
       UV_PYTHON: ${{ matrix.python-version }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5.0.0
+        uses: actions/checkout@v6.0.1
 
       - name: Install python tooling
         uses: ./.github/actions/install_deps
@@ -89,6 +92,7 @@ jobs:
       - test
       - get-values
     if: always()
+    timeout-minutes: 2
     steps:
       - name: fail if prior job failure
         if: needs.test.result != 'success'

@@ -8,6 +8,7 @@
 [![Downloads](https://pepy.tech/badge/lab-auto-pulumi)](https://pepy.tech/project/lab-auto-pulumi)
 [![Python Versions](https://img.shields.io/pypi/pyversions/lab-auto-pulumi.svg)](https://pypi.org/project/lab-auto-pulumi/)
 [![Codecov](https://codecov.io/gh/LabAutomationAndScreening/lab-auto-pulumi/branch/main/graph/badge.svg)](https://codecov.io/gh/LabAutomationAndScreening/lab-auto-pulumi)
+[![OpenIssues](https://isitmaintained.com/badge/open/LabAutomationAndScreening/lab-auto-pulumi.svg)](https://isitmaintained.com/project/LabAutomationAndScreening/lab-auto-pulumi)
 
 # Usage
 Documentation is hosted on [ReadTheDocs](https://lab-auto-pulumi.readthedocs.io/en/latest/?badge=latest).
