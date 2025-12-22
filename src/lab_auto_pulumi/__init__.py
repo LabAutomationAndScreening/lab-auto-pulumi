@@ -33,6 +33,7 @@ from .permissions import UserAttributes
 from .permissions import UserInfo
 from .permissions import Username
 from .permissions import all_created_users
+from .permissions import principal_in_org_condition
 from .workload import AwsLogicalWorkload
 
 __all__ = [
@@ -72,4 +73,5 @@ __all__ = [
     "get_manual_artifacts_bucket_name",
     "get_org_managed_ssm_param_value",
     "get_ssm_param_value",
+    "principal_in_org_condition",
 ]
