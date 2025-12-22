@@ -23,6 +23,7 @@ from .lib import create_resource_name_safe_str
 from .lib import get_manual_artifacts_bucket_name
 from .lib import get_org_managed_ssm_param_value
 from .lib import get_ssm_param_value
+from .organization import OrganizationInfo
 from .permissions import ORG_INFO
 from .permissions import AwsAccountInfo
 from .permissions import AwsSsoPermissionSet
@@ -65,6 +66,7 @@ __all__ = [
     "Ec2WithRdp",
     "ManualArtifactsBucket",
     "OrgInfo",
+    "OrganizationInfo",
     "User",
     "UserAttributes",
     "UserInfo",
