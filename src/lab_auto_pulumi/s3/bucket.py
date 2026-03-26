@@ -51,35 +51,37 @@ class ManualArtifactsBucket(ComponentResource):
             opts=ResourceOptions(parent=self, delete_before_replace=True),
             bucket=self.bucket.bucket_name,  # type: ignore[reportArgumentType] # pyright somehow thinks a bucket name can be Output[None], which doesn't seem possible
             policy_document=self.bucket.bucket_name.apply(
-                lambda bucket_name: get_policy_document(
-                    statements=[
-                        GetPolicyDocumentStatementArgs(
-                            effect="Allow",
-                            actions=["s3:PutObject", "s3:GetObject"],
-                            principals=[
-                                GetPolicyDocumentStatementPrincipalArgs(
-                                    type="*",  # TODO: consider locking this down to just people for PutObject
-                                    identifiers=[
-                                        "*"
-                                    ],  # Anyone can do anything with this bucket if they themselves have been granted permission. WORM model keeps files secure.
-                                )
-                            ],
-                            resources=[f"arn:aws:s3:::{bucket_name}/*"],
-                            conditions=[principal_in_org_condition(org_id)],
-                        ),
-                        GetPolicyDocumentStatementArgs(
-                            effect="Allow",
-                            actions=["s3:ListBucket"],
-                            principals=[
-                                GetPolicyDocumentStatementPrincipalArgs(
-                                    type="*",
-                                    identifiers=["*"],
-                                )
-                            ],
-                            resources=[f"arn:aws:s3:::{bucket_name}"],
-                            conditions=[principal_in_org_condition(org_id)],
-                        ),
-                    ]
-                ).json
+                lambda bucket_name: (
+                    get_policy_document(
+                        statements=[
+                            GetPolicyDocumentStatementArgs(
+                                effect="Allow",
+                                actions=["s3:PutObject", "s3:GetObject"],
+                                principals=[
+                                    GetPolicyDocumentStatementPrincipalArgs(
+                                        type="*",  # TODO: consider locking this down to just people for PutObject
+                                        identifiers=[
+                                            "*"
+                                        ],  # Anyone can do anything with this bucket if they themselves have been granted permission. WORM model keeps files secure.
+                                    )
+                                ],
+                                resources=[f"arn:aws:s3:::{bucket_name}/*"],
+                                conditions=[principal_in_org_condition(org_id)],
+                            ),
+                            GetPolicyDocumentStatementArgs(
+                                effect="Allow",
+                                actions=["s3:ListBucket"],
+                                principals=[
+                                    GetPolicyDocumentStatementPrincipalArgs(
+                                        type="*",
+                                        identifiers=["*"],
+                                    )
+                                ],
+                                resources=[f"arn:aws:s3:::{bucket_name}"],
+                                conditions=[principal_in_org_condition(org_id)],
+                            ),
+                        ]
+                    ).json
+                )
             ),
         )
