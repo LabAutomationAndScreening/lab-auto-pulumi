@@ -17,6 +17,8 @@ from .constants import TAG_VALUE_FOR_WRITE_ACCESS
 from .constants import USER_ACCESS_TAG_DELIMITER
 from .constants import WORKLOAD_INFO_SSM_PARAM_PREFIX
 from .ec2 import Ec2WithRdp
+from .ec2 import ExistingSecurityGroupConfig
+from .ec2 import NewSecurityGroupConfig
 from .lib import AwsAccountId
 from .lib import WorkloadName
 from .lib import create_resource_name_safe_str
@@ -64,7 +66,9 @@ __all__ = [
     "AwsSsoPermissionSet",
     "AwsSsoPermissionSetAccountAssignments",
     "Ec2WithRdp",
+    "ExistingSecurityGroupConfig",
     "ManualArtifactsBucket",
+    "NewSecurityGroupConfig",
     "OrgInfo",
     "OrganizationInfo",
     "User",

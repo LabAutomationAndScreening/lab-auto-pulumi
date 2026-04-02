@@ -14,12 +14,28 @@ from pulumi_aws.iam import get_policy_document
 from pulumi_aws_native import TagArgs
 from pulumi_aws_native import ec2
 from pulumi_aws_native import iam
+from pydantic import BaseModel
+from pydantic import ConfigDict
 
 from .constants import CENTRAL_NETWORKING_SSM_PREFIX
 from .lib import create_resource_name_safe_str
 from .lib import get_org_managed_ssm_param_value
 
 logger = logging.getLogger(__name__)
+
+
+class NewSecurityGroupConfig(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    central_networking_vpc_name: str
+    description: str = "Allow all outbound traffic for SSM access"
+    ingress_rules: list[ec2.SecurityGroupIngressArgs] = []
+
+
+class ExistingSecurityGroupConfig(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    security_group_id: Output[str]
 
 
 class Ec2WithRdp(ComponentResource):
@@ -30,13 +46,11 @@ class Ec2WithRdp(ComponentResource):
         central_networking_subnet_name: str,
         instance_type: str,
         image_id: str,
-        central_networking_vpc_name: str,
+        security_group_config: NewSecurityGroupConfig | ExistingSecurityGroupConfig,
         root_volume_gb: int = 30,
         user_data: Output[str]
         | None = None,  # On Windows EC2, Userdata script shows up here: C:\Windows\system32\config\systemprofile\AppData\Local\Temp\Amazon\EC2-Windows\Launch\InvokeUserData\UserScript.ps1.  You may need to start just at system32 and navigate down, because it will keep asking for permissions
         additional_instance_tags: list[TagArgs] | None = None,
-        security_group_description: str = "Allow all outbound traffic for SSM access",
-        ingress_rules: list[ec2.SecurityGroupIngressArgs] | None = None,
         instance_ignore_changes: list[str] | None = None,
         export_user_data: bool = True,
         persist_user_data: bool = False,  # if false, then user data changes will result in replacing the instance (because new user data won't take effect unless the instance is replaced). if true, then you can replace the user data, but it will force an immediate restart of the EC2...which may not actually show up in the Pulumi plan
@@ -47,8 +61,6 @@ class Ec2WithRdp(ComponentResource):
         super().__init__("labauto:Ec2WithRdp", append_resource_suffix(name), None, opts=ResourceOptions(parent=parent))
         replace_on_changes = ["user_data"] if not persist_user_data else []
         self.name = name
-        if ingress_rules is None:
-            ingress_rules = []
         if additional_instance_tags is None:
             additional_instance_tags = []
         resource_name = f"{name}-ec2"
@@ -75,43 +87,52 @@ class Ec2WithRdp(ComponentResource):
             roles=[self.instance_role.role_name],  # pyright: ignore[reportArgumentType] # pyright thinks only inputs can be set as role names, but Outputs seem to work fine
             opts=ResourceOptions(parent=self),
         )
-        self.security_group = ec2.SecurityGroup(
-            append_resource_suffix(name),
-            vpc_id=get_org_managed_ssm_param_value(
-                f"{CENTRAL_NETWORKING_SSM_PREFIX}/vpcs/{central_networking_vpc_name}/id"
-            ),
-            group_description=security_group_description,
-            tags=[TagArgs(key="Name", value=name), *common_tags_native()],
-            opts=ResourceOptions(parent=self),
-        )
-        for idx, rule_args in enumerate(ingress_rules):
-            if not rule_args.description:
-                raise ValueError(  # noqa: TRY003 # not worth making a custom exception for this...especially until we figure out how to test Pulumi components
-                    f"Security group ingress rule index {idx} must have a description ({rule_args})"
-                )
-            assert isinstance(rule_args.description, str), (
-                f"Expected str but got type {type(rule_args.description)} for {rule_args.description}"
+        if isinstance(security_group_config, ExistingSecurityGroupConfig):
+            self.security_group = ec2.SecurityGroup.get(
+                append_resource_suffix(name),
+                security_group_config.security_group_id,
+                opts=ResourceOptions(parent=self),
             )
-            resource_safe_description = create_resource_name_safe_str(rule_args.description)
+            resolved_security_group_id = self.security_group.id
+        else:
+            self.security_group = ec2.SecurityGroup(
+                append_resource_suffix(name),
+                vpc_id=get_org_managed_ssm_param_value(
+                    f"{CENTRAL_NETWORKING_SSM_PREFIX}/vpcs/{security_group_config.central_networking_vpc_name}/id"
+                ),
+                group_description=security_group_config.description,
+                tags=[TagArgs(key="Name", value=name), *common_tags_native()],
+                opts=ResourceOptions(parent=self),
+            )
+            for idx, rule_args in enumerate(security_group_config.ingress_rules):
+                if not rule_args.description:
+                    raise ValueError(  # noqa: TRY003 # not worth making a custom exception for this...especially until we figure out how to test Pulumi components
+                        f"Security group ingress rule index {idx} must have a description ({rule_args})"
+                    )
+                assert isinstance(rule_args.description, str), (
+                    f"Expected str but got type {type(rule_args.description)} for {rule_args.description}"
+                )
+                resource_safe_description = create_resource_name_safe_str(rule_args.description)
 
-            _ = ec2.SecurityGroupIngress(
-                append_resource_suffix(f"{name}-ingress-{resource_safe_description}", max_length=190),
+                _ = ec2.SecurityGroupIngress(
+                    append_resource_suffix(f"{name}-ingress-{resource_safe_description}", max_length=190),
+                    opts=ResourceOptions(parent=self.security_group),
+                    ip_protocol=rule_args.ip_protocol,
+                    from_port=rule_args.from_port,
+                    to_port=rule_args.to_port,
+                    source_security_group_id=rule_args.source_security_group_id,
+                    group_id=self.security_group.id,
+                )
+            _ = ec2.SecurityGroupEgress(  # TODO: see if this can be further restricted
+                append_resource_suffix(f"{name}-egress", max_length=190),
                 opts=ResourceOptions(parent=self.security_group),
-                ip_protocol=rule_args.ip_protocol,
-                from_port=rule_args.from_port,
-                to_port=rule_args.to_port,
-                source_security_group_id=rule_args.source_security_group_id,
+                ip_protocol="-1",
+                from_port=0,
+                to_port=0,
+                cidr_ip="0.0.0.0/0",
                 group_id=self.security_group.id,
             )
-        _ = ec2.SecurityGroupEgress(  # TODO: see if this can be further restricted
-            append_resource_suffix(f"{name}-egress", max_length=190),
-            opts=ResourceOptions(parent=self.security_group),
-            ip_protocol="-1",
-            from_port=0,
-            to_port=0,
-            cidr_ip="0.0.0.0/0",
-            group_id=self.security_group.id,
-        )
+            resolved_security_group_id = self.security_group.id
         self.instance = ec2.Instance(
             append_resource_suffix(name),
             instance_type=instance_type,
@@ -119,7 +140,7 @@ class Ec2WithRdp(ComponentResource):
             subnet_id=get_org_managed_ssm_param_value(
                 f"{CENTRAL_NETWORKING_SSM_PREFIX}/subnets/{central_networking_subnet_name}/id"
             ),
-            security_group_ids=[self.security_group.id],
+            security_group_ids=[resolved_security_group_id],
             block_device_mappings=[
                 ec2.InstanceBlockDeviceMappingArgs(
                     device_name="/dev/sda1", ebs=ec2.InstanceEbsArgs(volume_size=root_volume_gb, volume_type="gp3")
