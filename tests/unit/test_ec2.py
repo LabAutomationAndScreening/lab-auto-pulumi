@@ -14,8 +14,7 @@ from lab_auto_pulumi.ec2 import Ec2WithRdp
 from lab_auto_pulumi.ec2 import ExistingSecurityGroupConfig
 from lab_auto_pulumi.ec2 import NewSecurityGroupConfig
 
-# pulumi.runtime.test is partially typed in the Pulumi SDK; alias avoids repeating the ignore on every test
-_pulumi_test = pulumi.runtime.test  # type: ignore[reportUnknownMemberType]
+_pulumi_test = pulumi.runtime.test  # type: ignore[reportUnknownMemberType] # pulumi.runtime.test is partially typed in the Pulumi SDK; alias avoids repeating the ignore on every test
 
 
 class Ec2Mocks(pulumi.runtime.Mocks):
@@ -81,110 +80,62 @@ def _ssm_side_effect(param: str) -> str:
     return f"mock-{param.rsplit('/', maxsplit=1)[-1]}"
 
 
-# ============================================================================
-# New security group path
-# ============================================================================
-
-
-@_pulumi_test
-def test_When_new_sg_config__Then_instance_has_correct_instance_type() -> pulumi.Output[None]:
-    pulumi.runtime.set_mocks(Ec2Mocks(), project="test-project", stack="test-stack")
-
-    component = _new_ec2_with_rdp(instance_type="t3.micro")
-
-    def check(instance_type: str | None) -> None:
-        assert instance_type == "t3.micro"
-
-    return component.instance.instance_type.apply(check)
-
-
-@_pulumi_test
-def test_When_new_sg_config__Then_instance_has_correct_image_id_and_subnet() -> pulumi.Output[None]:
-    pulumi.runtime.set_mocks(Ec2Mocks(), project="test-project", stack="test-stack")
-
-    component = _new_ec2_with_rdp(
-        image_id="ami-87654321",
-        central_networking_subnet_name="my-subnet",
-        instance_type="t3.large",
-    )
-
-    def check(args: list[Any]) -> None:
-        image_id, subnet_id = args
-        assert image_id == "ami-87654321"
-        assert subnet_id == "mock-id", f"Expected 'mock-id' but got {subnet_id!r}"
-
-    return pulumi.Output.all(
-        component.instance.image_id,
-        component.instance.subnet_id,
-    ).apply(check)
-
-
-@_pulumi_test
-def test_When_new_sg_config__Then_security_group_created_with_vpc_id_from_ssm() -> pulumi.Output[None]:
-    pulumi.runtime.set_mocks(Ec2Mocks(), project="test-project", stack="test-stack")
-
-    component = _new_ec2_with_rdp(security_group_config=NewSecurityGroupConfig(central_networking_vpc_name="test-vpc"))
-
-    def check(vpc_id: str | None) -> None:
-        assert vpc_id == "mock-id", f"Expected 'mock-id' but got {vpc_id!r}"
-
-    return component.security_group.vpc_id.apply(check)
-
-
-@_pulumi_test
-def test_When_new_sg_with_ingress_rule__Then_ingress_resource_created() -> pulumi.Output[None]:
+@pytest.fixture(autouse=True)
+def ec2_mocks() -> Ec2Mocks:
     mocks = Ec2Mocks()
     pulumi.runtime.set_mocks(mocks, project="test-project", stack="test-stack")
+    return mocks
 
-    component = _new_ec2_with_rdp(
-        security_group_config=NewSecurityGroupConfig(
-            central_networking_vpc_name="test-vpc",
-            ingress_rules=[
-                ec2.SecurityGroupIngressArgs(
-                    description="Allow RDP",
-                    ip_protocol="tcp",
-                    from_port=3389,
-                    to_port=3389,
-                )
-            ],
+
+class TestNewSecurityGroupConfig:
+    @_pulumi_test
+    def test_When_new_sg_config__Then_instance_has_correct_instance_type(self) -> pulumi.Output[None]:
+        component = _new_ec2_with_rdp(instance_type="t3.micro")
+
+        def check(instance_type: str | None) -> None:
+            assert instance_type == "t3.micro"
+
+        return component.instance.instance_type.apply(check)
+
+    @_pulumi_test
+    def test_When_new_sg_config__Then_instance_has_correct_image_id_and_subnet(self) -> pulumi.Output[None]:
+        component = _new_ec2_with_rdp(
+            image_id="ami-87654321",
+            central_networking_subnet_name="my-subnet",
+            instance_type="t3.large",
         )
-    )
 
-    def check(_: str) -> None:
-        ingress = [r for r in mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroupIngress"]
-        assert [r.inputs.get("ipProtocol") for r in ingress] == ["tcp"]  # type: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
-        assert [r.inputs.get("fromPort") for r in ingress] == [3389]  # type: ignore[reportUnknownMemberType]
-        assert [r.inputs.get("toPort") for r in ingress] == [3389]  # type: ignore[reportUnknownMemberType]
+        def check(args: list[Any]) -> None:
+            image_id, subnet_id = args
+            assert image_id == "ami-87654321"
+            assert subnet_id == "mock-id", f"Expected 'mock-id' but got {subnet_id!r}"
 
-    return component.instance.id.apply(check)
+        return pulumi.Output.all(
+            component.instance.image_id,
+            component.instance.subnet_id,
+        ).apply(check)
 
+    @_pulumi_test
+    def test_When_new_sg_config__Then_security_group_created_with_vpc_id_from_ssm(self) -> pulumi.Output[None]:
+        component = _new_ec2_with_rdp(
+            security_group_config=NewSecurityGroupConfig(central_networking_vpc_name="test-vpc")
+        )
 
-@_pulumi_test
-def test_When_new_sg_config__Then_egress_rule_always_created() -> pulumi.Output[None]:
-    mocks = Ec2Mocks()
-    pulumi.runtime.set_mocks(mocks, project="test-project", stack="test-stack")
+        def check(vpc_id: str | None) -> None:
+            assert vpc_id == "mock-id", f"Expected 'mock-id' but got {vpc_id!r}"
 
-    component = _new_ec2_with_rdp()
+        return component.security_group.vpc_id.apply(check)
 
-    def check(_: str) -> None:
-        egress = [r for r in mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroupEgress"]
-        assert len(egress) == 1
-        assert egress[0].inputs.get("ipProtocol") == "-1"  # type: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
-        assert egress[0].inputs.get("cidrIp") == "0.0.0.0/0"  # type: ignore[reportUnknownMemberType]
-
-    return component.instance.id.apply(check)
-
-
-def test_When_ingress_rule_has_no_description__Then_raises_value_error() -> None:
-    pulumi.runtime.set_mocks(Ec2Mocks(), project="test-project", stack="test-stack")
-
-    with pytest.raises(ValueError, match="must have a description"):
-        _ = _new_ec2_with_rdp(
+    @_pulumi_test
+    def test_When_new_sg_with_ingress_rule__Then_ingress_resource_created(
+        self, ec2_mocks: Ec2Mocks
+    ) -> pulumi.Output[None]:
+        component = _new_ec2_with_rdp(
             security_group_config=NewSecurityGroupConfig(
                 central_networking_vpc_name="test-vpc",
                 ingress_rules=[
                     ec2.SecurityGroupIngressArgs(
-                        description="",
+                        description="Allow RDP",
                         ip_protocol="tcp",
                         from_port=3389,
                         to_port=3389,
@@ -193,82 +144,113 @@ def test_When_ingress_rule_has_no_description__Then_raises_value_error() -> None
             )
         )
 
+        def check(_: str) -> None:
+            ingress = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroupIngress"]
+            assert [r.inputs.get("ipProtocol") for r in ingress] == ["tcp"]  # type: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
+            assert [r.inputs.get("fromPort") for r in ingress] == [3389]  # type: ignore[reportUnknownMemberType]
+            assert [r.inputs.get("toPort") for r in ingress] == [3389]  # type: ignore[reportUnknownMemberType]
 
-# ============================================================================
-# Existing security group path
-# ============================================================================
+        return component.instance.id.apply(check)
 
+    @_pulumi_test
+    def test_When_new_sg_config__Then_egress_rule_always_created(self) -> pulumi.Output[None]:
+        mocks = Ec2Mocks()
+        pulumi.runtime.set_mocks(mocks, project="test-project", stack="test-stack")
 
-@_pulumi_test
-def test_When_existing_sg_config__Then_no_new_security_group_resource_created() -> pulumi.Output[None]:
-    mocks = Ec2Mocks()
-    pulumi.runtime.set_mocks(mocks, project="test-project", stack="test-stack")
+        component = _new_ec2_with_rdp()
 
-    component = _new_ec2_with_rdp(
-        security_group_config=ExistingSecurityGroupConfig(security_group_id=pulumi.Output.from_input("sg-existing-123"))
-    )
+        def check(_: str) -> None:
+            egress = [r for r in mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroupEgress"]
+            assert len(egress) == 1
+            assert egress[0].inputs.get("ipProtocol") == "-1"  # type: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
+            assert egress[0].inputs.get("cidrIp") == "0.0.0.0/0"  # type: ignore[reportUnknownMemberType]
 
-    def check(_: str) -> None:
-        # ec2.SecurityGroup.get() is a ReadResource, which flows through new_resource in the mock
-        # with resource_id set to the ID being read. Assert we read the right one and never created a new one.
-        read_sgs = [r for r in mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroup" and r.resource_id]
-        new_sgs = [r for r in mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroup" and not r.resource_id]
-        assert [r.resource_id for r in read_sgs] == ["sg-existing-123"]
-        assert new_sgs == [], f"Expected no new SecurityGroup resources but got {new_sgs}"
+        return component.instance.id.apply(check)
 
-    return component.instance.id.apply(check)
-
-
-@_pulumi_test
-def test_When_existing_sg_config__Then_instance_uses_provided_sg_id() -> pulumi.Output[None]:
-    pulumi.runtime.set_mocks(Ec2Mocks(), project="test-project", stack="test-stack")
-
-    component = _new_ec2_with_rdp(
-        security_group_config=ExistingSecurityGroupConfig(security_group_id=pulumi.Output.from_input("sg-existing-123"))
-    )
-
-    def check(sg_ids: Sequence[Any] | None) -> None:
-        assert sg_ids is not None, "Expected sg_ids to be not None"
-        assert "sg-existing-123" in sg_ids, f"Expected 'sg-existing-123' in {sg_ids}"
-
-    return component.instance.security_group_ids.apply(check)
-
-
-# ============================================================================
-# user_data, additional tags, and instance role
-# ============================================================================
+    @_pulumi_test
+    def test_When_ingress_rule_has_no_description__Then_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="must have a description"):
+            _ = _new_ec2_with_rdp(
+                security_group_config=NewSecurityGroupConfig(
+                    central_networking_vpc_name="test-vpc",
+                    ingress_rules=[
+                        ec2.SecurityGroupIngressArgs(
+                            description="",
+                            ip_protocol="tcp",
+                            from_port=3389,
+                            to_port=3389,
+                        )
+                    ],
+                )
+            )
 
 
-@_pulumi_test
-def test_When_user_data_provided__Then_instance_user_data_is_base64_encoded() -> pulumi.Output[None]:
-    pulumi.runtime.set_mocks(Ec2Mocks(), project="test-project", stack="test-stack")
+class TestExistingSecurityGroup:
+    @_pulumi_test
+    def test_When_existing_sg_config__Then_no_new_security_group_resource_created(self) -> pulumi.Output[None]:
+        mocks = Ec2Mocks()
+        pulumi.runtime.set_mocks(mocks, project="test-project", stack="test-stack")
 
-    raw = "write-me-a-script"
-    component = _new_ec2_with_rdp(user_data=pulumi.Output.from_input(raw))
+        component = _new_ec2_with_rdp(
+            security_group_config=ExistingSecurityGroupConfig(
+                security_group_id=pulumi.Output.from_input("sg-existing-123")
+            )
+        )
 
-    def check(encoded: str | None) -> None:
-        expected = base64.b64encode(raw.encode()).decode()
-        assert encoded == expected, f"Expected {expected!r} but got {encoded!r}"
+        def check(_: str) -> None:
+            # ec2.SecurityGroup.get() is a ReadResource, which flows through new_resource in the mock
+            # with resource_id set to the ID being read. Assert we read the right one and never created a new one.
+            read_sgs = [r for r in mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroup" and r.resource_id]
+            new_sgs = [
+                r for r in mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroup" and not r.resource_id
+            ]
+            assert [r.resource_id for r in read_sgs] == ["sg-existing-123"]
+            assert new_sgs == [], f"Expected no new SecurityGroup resources but got {new_sgs}"
 
-    return component.instance.user_data.apply(check)
+        return component.instance.id.apply(check)
+
+    @_pulumi_test
+    def test_When_existing_sg_config__Then_instance_uses_provided_sg_id(self) -> pulumi.Output[None]:
+
+        component = _new_ec2_with_rdp(
+            security_group_config=ExistingSecurityGroupConfig(
+                security_group_id=pulumi.Output.from_input("sg-existing-123")
+            )
+        )
+
+        def check(sg_ids: Sequence[Any] | None) -> None:
+            assert sg_ids is not None, "Expected sg_ids to be not None"
+            assert "sg-existing-123" in sg_ids, f"Expected 'sg-existing-123' in {sg_ids}"
+
+        return component.instance.security_group_ids.apply(check)
 
 
-@_pulumi_test
-def test_When_no_user_data__Then_instance_user_data_is_none() -> pulumi.Output[None]:
-    pulumi.runtime.set_mocks(Ec2Mocks(), project="test-project", stack="test-stack")
+class TestUserData:
+    @_pulumi_test
+    def test_When_user_data_provided__Then_instance_user_data_is_base64_encoded(self) -> pulumi.Output[None]:
 
-    component = _new_ec2_with_rdp(user_data=None)
+        raw = "write-me-a-script"
+        component = _new_ec2_with_rdp(user_data=pulumi.Output.from_input(raw))
 
-    def check(user_data: str | None) -> None:
-        assert user_data is None, f"Expected None but got {user_data!r}"
+        def check(encoded: str | None) -> None:
+            expected = base64.b64encode(raw.encode()).decode()
+            assert encoded == expected, f"Expected {expected!r} but got {encoded!r}"
 
-    return component.instance.user_data.apply(check)
+        return component.instance.user_data.apply(check)
+
+    @_pulumi_test
+    def test_When_no_user_data__Then_instance_user_data_is_none(self) -> pulumi.Output[None]:
+
+        component = _new_ec2_with_rdp(user_data=None)
+
+        def check(user_data: str | None) -> None:
+            assert user_data is None, f"Expected None but got {user_data!r}"
+
+        return component.instance.user_data.apply(check)
 
 
 @_pulumi_test
 def test_When_additional_instance_tags_provided__Then_tags_appear_on_instance() -> pulumi.Output[None]:
-    pulumi.runtime.set_mocks(Ec2Mocks(), project="test-project", stack="test-stack")
-
     component = _new_ec2_with_rdp(
         additional_instance_tags=[
             TagArgs(key="env", value="testing"),
@@ -287,8 +269,6 @@ def test_When_additional_instance_tags_provided__Then_tags_appear_on_instance() 
 
 @_pulumi_test
 def test_When_component_created__Then_instance_role_has_ssm_managed_policy() -> pulumi.Output[None]:
-    pulumi.runtime.set_mocks(Ec2Mocks(), project="test-project", stack="test-stack")
-
     component = _new_ec2_with_rdp()
 
     def check(arns: Sequence[str] | None) -> None:
@@ -301,8 +281,6 @@ def test_When_component_created__Then_instance_role_has_ssm_managed_policy() -> 
 
 @_pulumi_test
 def test_When_component_created__Then_instance_role_trust_policy_allows_ec2() -> pulumi.Output[None]:
-    pulumi.runtime.set_mocks(Ec2Mocks(), project="test-project", stack="test-stack")
-
     component = _new_ec2_with_rdp()
 
     def check(policy_json: str) -> None:
