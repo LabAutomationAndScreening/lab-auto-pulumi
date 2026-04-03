@@ -124,6 +124,7 @@ class Ec2WithRdp(ComponentResource):
                     to_port=rule_args.to_port,
                     source_security_group_id=rule_args.source_security_group_id,
                     group_id=self.security_group.id,
+                    description=rule_args.description,
                 )
             _ = ec2.SecurityGroupEgress(  # TODO: see if this can be further restricted
                 append_resource_suffix(f"{name}-egress", max_length=190),
@@ -133,6 +134,7 @@ class Ec2WithRdp(ComponentResource):
                 to_port=0,
                 cidr_ip="0.0.0.0/0",
                 group_id=self.security_group.id,
+                description="Allow all outbound traffic",
             )
             resolved_security_group_id = self.security_group.id
         self.instance = ec2.Instance(
