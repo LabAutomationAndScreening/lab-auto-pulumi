@@ -26,6 +26,7 @@ class Ec2Mocks(pulumi.runtime.Mocks):
     def __init__(self) -> None:
         super().__init__()
         self.created_resources: list[pulumi.runtime.MockResourceArgs] = []
+        self.captured_calls: list[pulumi.runtime.MockCallArgs] = []
 
     def new_resource(self, args: pulumi.runtime.MockResourceArgs) -> tuple[str, dict[str, Any]]:  # type: ignore[override] # pyright infers Optional[str] for id but str is always safe here
         self.created_resources.append(args)
@@ -33,6 +34,7 @@ class Ec2Mocks(pulumi.runtime.Mocks):
         return (resource_id, args.inputs)  # type: ignore[return-value] # Pulumi SDK types inputs as dict[Unknown, Unknown]
 
     def call(self, args: pulumi.runtime.MockCallArgs) -> dict[str, Any]:  # type: ignore[override] # pyright infers tuple[dict, Optional[list]] but plain dict is accepted
+        self.captured_calls.append(args)
         if args.token == "aws:iam/getPolicyDocument:getPolicyDocument":  # noqa:S105 # definitely not a password
             return {
                 "json": json.dumps(
@@ -42,7 +44,7 @@ class Ec2Mocks(pulumi.runtime.Mocks):
                             {
                                 "Effect": "Allow",
                                 "Action": "sts:AssumeRole",
-                                "Principal": {"Service": "ec2.amazonaws.com"},
+                                "Principal": {"Service": Faker().slug() + ".amazonaws.com"},
                             }
                         ],
                     }
@@ -301,14 +303,23 @@ def test_When_component_created__Then_instance_role_has_ssm_managed_policy() -> 
 
 
 @_pulumi_test
-def test_When_component_created__Then_instance_role_trust_policy_allows_ec2() -> pulumi.Output[None]:
+def test_When_component_created__Then_instance_role_trust_policy_allows_ec2(
+    ec2_mocks: Ec2Mocks,
+) -> pulumi.Output[None]:
     component = _new_ec2_with_rdp()
 
-    def check(policy_json: str) -> None:
-        policy = json.loads(policy_json)
-        services: str | list[str] = policy["Statement"][0]["Principal"]["Service"]
-        if isinstance(services, str):
-            services = [services]
-        assert "ec2.amazonaws.com" in services, f"Expected ec2.amazonaws.com in trust policy but got {services}"
+    def check(_: str) -> None:
+        policy_calls = [c for c in ec2_mocks.captured_calls if c.token == "aws:iam/getPolicyDocument:getPolicyDocument"]  # noqa:S105 # definitely not a password
+        assert len(policy_calls) == 1
+        call_args: dict[str, Any] = policy_calls[0].args  # type: ignore[reportUnknownMemberType] # MockCallArgs.args is typed as bare dict in the Pulumi SDK
+        statements: list[dict[str, Any]] = call_args.get("statements", [])
+        assert len(statements) == 1
+        stmt = statements[0]
+        assert stmt.get("effect") == "Allow"
+        assert stmt.get("actions") == ["sts:AssumeRole"]
+        principals: list[dict[str, Any]] = stmt.get("principals", [])
+        assert len(principals) == 1
+        assert principals[0].get("type") == "Service"
+        assert principals[0].get("identifiers") == ["ec2.amazonaws.com"]
 
     return component.instance_role.assume_role_policy_document.apply(check)
