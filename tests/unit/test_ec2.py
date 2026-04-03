@@ -10,6 +10,7 @@ import pytest
 from pulumi_aws_native import TagArgs
 from pulumi_aws_native import ec2
 
+from lab_auto_pulumi import ec2 as lab_auto_ec2_module
 from lab_auto_pulumi.ec2 import Ec2WithRdp
 from lab_auto_pulumi.ec2 import ExistingSecurityGroupConfig
 from lab_auto_pulumi.ec2 import NewSecurityGroupConfig
@@ -59,9 +60,10 @@ def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more rea
     if security_group_config is None:
         security_group_config = NewSecurityGroupConfig(central_networking_vpc_name="test-vpc")
     with (
-        mock.patch("lab_auto_pulumi.ec2.common_tags_native", return_value=[]),
-        mock.patch(
-            "lab_auto_pulumi.ec2.get_org_managed_ssm_param_value",
+        mock.patch.object(lab_auto_ec2_module, lab_auto_ec2_module.common_tags_native.__name__, return_value=[]),
+        mock.patch.object(
+            lab_auto_ec2_module,
+            lab_auto_ec2_module.get_org_managed_ssm_param_value.__name__,
             side_effect=_ssm_side_effect,
         ),
     ):
