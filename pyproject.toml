@@ -34,6 +34,7 @@ dev = [
     # Specific to this repository
 
     "boto3-stubs[all]", # version specification is in main dependencies already
+    "faker>=40.11.0",
 
     # Managed by upstream template
     "pyright>=1.1.408",

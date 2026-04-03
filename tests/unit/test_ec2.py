@@ -1,5 +1,6 @@
 import base64
 import json
+import random
 from collections.abc import Sequence
 from typing import Any
 from unittest import mock
@@ -7,6 +8,7 @@ from unittest import mock
 import pulumi
 import pulumi.runtime
 import pytest
+from faker import Faker
 from pulumi_aws_native import TagArgs
 from pulumi_aws_native import ec2
 
@@ -16,6 +18,8 @@ from lab_auto_pulumi.ec2 import ExistingSecurityGroupConfig
 from lab_auto_pulumi.ec2 import NewSecurityGroupConfig
 
 _pulumi_test = pulumi.runtime.test  # type: ignore[reportUnknownMemberType] # pulumi.runtime.test is partially typed in the Pulumi SDK; alias avoids repeating the ignore on every test
+
+_EC2_INSTANCE_TYPES = ["t3.micro", "t3.large", "m5.xlarge", "c5.2xlarge"]
 
 
 class Ec2Mocks(pulumi.runtime.Mocks):
@@ -49,16 +53,25 @@ class Ec2Mocks(pulumi.runtime.Mocks):
 
 def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more readable to specify them as arguments in the tests than pack them into a config object, they are keyword args anyways with a bunch of default values
     *,
-    name: str = "test-instance",
-    central_networking_subnet_name: str = "test-subnet",
-    instance_type: str = "t3.micro",
-    image_id: str = "ami-12345678",
+    name: str | None = None,
+    central_networking_subnet_name: str | None = None,
+    instance_type: str | None = None,
+    image_id: str | None = None,
     security_group_config: NewSecurityGroupConfig | ExistingSecurityGroupConfig | None = None,
     user_data: pulumi.Output[str] | None = None,
     additional_instance_tags: list[TagArgs] | None = None,
 ) -> Ec2WithRdp:
+    _faker = Faker()
+    if name is None:
+        name = _faker.slug()
+    if central_networking_subnet_name is None:
+        central_networking_subnet_name = _faker.slug()
+    if instance_type is None:
+        instance_type = random.choice(_EC2_INSTANCE_TYPES)
+    if image_id is None:
+        image_id = f"ami-{_faker.hexify('????????')}"
     if security_group_config is None:
-        security_group_config = NewSecurityGroupConfig(central_networking_vpc_name="test-vpc")
+        security_group_config = NewSecurityGroupConfig(central_networking_vpc_name=_faker.slug())
     with (
         mock.patch.object(lab_auto_ec2_module, lab_auto_ec2_module.common_tags_native.__name__, return_value=[]),
         mock.patch.object(
@@ -92,25 +105,29 @@ def ec2_mocks() -> Ec2Mocks:
 class TestNewSecurityGroupConfig:
     @_pulumi_test
     def test_When_new_sg_config__Then_instance_has_correct_instance_type(self) -> pulumi.Output[None]:
-        component = _new_ec2_with_rdp(instance_type="t3.micro")
+        instance_type = random.choice(_EC2_INSTANCE_TYPES)
+        component = _new_ec2_with_rdp(instance_type=instance_type)
 
-        def check(instance_type: str | None) -> None:
-            assert instance_type == "t3.micro"
+        def check(actual: str | None) -> None:
+            assert actual == instance_type
 
         return component.instance.instance_type.apply(check)
 
     @_pulumi_test
-    def test_When_new_sg_config__Then_instance_has_correct_image_id_and_subnet(self) -> pulumi.Output[None]:
+    def test_When_new_sg_config__Then_instance_has_correct_image_id_and_subnet(
+        self, faker: Faker
+    ) -> pulumi.Output[None]:
+        image_id = f"ami-{faker.hexify('????????')}"
         component = _new_ec2_with_rdp(
-            image_id="ami-87654321",
-            central_networking_subnet_name="my-subnet",
-            instance_type="t3.large",
+            image_id=image_id,
+            central_networking_subnet_name=faker.slug(),
+            instance_type=random.choice(_EC2_INSTANCE_TYPES),
         )
 
         def check(args: list[Any]) -> None:
-            image_id, subnet_id = args
-            assert image_id == "ami-87654321"
-            assert subnet_id == "mock-id", f"Expected 'mock-id' but got {subnet_id!r}"
+            actual_image_id, actual_subnet_id = args
+            assert actual_image_id == image_id
+            assert actual_subnet_id == "mock-id", f"Expected 'mock-id' but got {actual_subnet_id!r}"
 
         return pulumi.Output.all(
             component.instance.image_id,
@@ -118,9 +135,11 @@ class TestNewSecurityGroupConfig:
         ).apply(check)
 
     @_pulumi_test
-    def test_When_new_sg_config__Then_security_group_created_with_vpc_id_from_ssm(self) -> pulumi.Output[None]:
+    def test_When_new_sg_config__Then_security_group_created_with_vpc_id_from_ssm(
+        self, faker: Faker
+    ) -> pulumi.Output[None]:
         component = _new_ec2_with_rdp(
-            security_group_config=NewSecurityGroupConfig(central_networking_vpc_name="test-vpc")
+            security_group_config=NewSecurityGroupConfig(central_networking_vpc_name=faker.slug())
         )
 
         def check(vpc_id: str | None) -> None:
@@ -130,11 +149,11 @@ class TestNewSecurityGroupConfig:
 
     @_pulumi_test
     def test_When_new_sg_with_ingress_rule__Then_ingress_resource_created(
-        self, ec2_mocks: Ec2Mocks
+        self, ec2_mocks: Ec2Mocks, faker: Faker
     ) -> pulumi.Output[None]:
         component = _new_ec2_with_rdp(
             security_group_config=NewSecurityGroupConfig(
-                central_networking_vpc_name="test-vpc",
+                central_networking_vpc_name=faker.slug(),
                 ingress_rules=[
                     ec2.SecurityGroupIngressArgs(
                         description="Allow RDP",
@@ -170,11 +189,11 @@ class TestNewSecurityGroupConfig:
         return component.instance.id.apply(check)
 
     @_pulumi_test
-    def test_When_ingress_rule_has_no_description__Then_raises_value_error(self) -> None:
+    def test_When_ingress_rule_has_no_description__Then_raises_value_error(self, faker: Faker) -> None:
         with pytest.raises(ValueError, match="must have a description"):
             _ = _new_ec2_with_rdp(
                 security_group_config=NewSecurityGroupConfig(
-                    central_networking_vpc_name="test-vpc",
+                    central_networking_vpc_name=faker.slug(),
                     ingress_rules=[
                         ec2.SecurityGroupIngressArgs(
                             description="",
@@ -189,14 +208,15 @@ class TestNewSecurityGroupConfig:
 
 class TestExistingSecurityGroup:
     @_pulumi_test
-    def test_When_existing_sg_config__Then_no_new_security_group_resource_created(self) -> pulumi.Output[None]:
+    def test_When_existing_sg_config__Then_no_new_security_group_resource_created(
+        self, faker: Faker
+    ) -> pulumi.Output[None]:
         mocks = Ec2Mocks()
         pulumi.runtime.set_mocks(mocks, project="test-project", stack="test-stack")
 
+        sg_id = f"sg-{faker.hexify('????????')}"
         component = _new_ec2_with_rdp(
-            security_group_config=ExistingSecurityGroupConfig(
-                security_group_id=pulumi.Output.from_input("sg-existing-123")
-            )
+            security_group_config=ExistingSecurityGroupConfig(security_group_id=pulumi.Output.from_input(sg_id))
         )
 
         def check(_: str) -> None:
@@ -206,43 +226,42 @@ class TestExistingSecurityGroup:
             new_sgs = [
                 r for r in mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroup" and not r.resource_id
             ]
-            assert [r.resource_id for r in read_sgs] == ["sg-existing-123"]
+            assert [r.resource_id for r in read_sgs] == [sg_id]
             assert new_sgs == [], f"Expected no new SecurityGroup resources but got {new_sgs}"
 
         return component.instance.id.apply(check)
 
     @_pulumi_test
-    def test_When_existing_sg_config__Then_instance_uses_provided_sg_id(self) -> pulumi.Output[None]:
-
+    def test_When_existing_sg_config__Then_instance_uses_provided_sg_id(self, faker: Faker) -> pulumi.Output[None]:
+        sg_id = f"sg-{faker.hexify('????????')}"
         component = _new_ec2_with_rdp(
-            security_group_config=ExistingSecurityGroupConfig(
-                security_group_id=pulumi.Output.from_input("sg-existing-123")
-            )
+            security_group_config=ExistingSecurityGroupConfig(security_group_id=pulumi.Output.from_input(sg_id))
         )
 
         def check(sg_ids: Sequence[Any] | None) -> None:
             assert sg_ids is not None, "Expected sg_ids to be not None"
-            assert "sg-existing-123" in sg_ids, f"Expected 'sg-existing-123' in {sg_ids}"
+            assert sg_id in sg_ids, f"Expected {sg_id!r} in {sg_ids}"
 
         return component.instance.security_group_ids.apply(check)
 
 
 class TestUserData:
     @_pulumi_test
-    def test_When_user_data_provided__Then_instance_user_data_is_base64_encoded(self) -> pulumi.Output[None]:
+    def test_When_user_data_provided__Then_instance_user_data_is_base64_encoded(
+        self, faker: Faker
+    ) -> pulumi.Output[None]:
 
-        raw = "write-me-a-script"
-        component = _new_ec2_with_rdp(user_data=pulumi.Output.from_input(raw))
+        raw_user_data_script = faker.sentence()
+        component = _new_ec2_with_rdp(user_data=pulumi.Output.from_input(raw_user_data_script))
 
         def check(encoded: str | None) -> None:
-            expected = base64.b64encode(raw.encode()).decode()
+            expected = base64.b64encode(raw_user_data_script.encode()).decode()
             assert encoded == expected, f"Expected {expected!r} but got {encoded!r}"
 
         return component.instance.user_data.apply(check)
 
     @_pulumi_test
     def test_When_no_user_data__Then_instance_user_data_is_none(self) -> pulumi.Output[None]:
-
         component = _new_ec2_with_rdp(user_data=None)
 
         def check(user_data: str | None) -> None:
@@ -252,19 +271,23 @@ class TestUserData:
 
 
 @_pulumi_test
-def test_When_additional_instance_tags_provided__Then_tags_appear_on_instance() -> pulumi.Output[None]:
+def test_When_additional_instance_tags_provided__Then_tags_appear_on_instance(faker: Faker) -> pulumi.Output[None]:
+    key_one = faker.word()
+    value_one = faker.word()
+    key_two = faker.word()
+    value_two = faker.word()
     component = _new_ec2_with_rdp(
         additional_instance_tags=[
-            TagArgs(key="env", value="testing"),
-            TagArgs(key="owner", value="automation"),
+            TagArgs(key=key_one, value=value_one),
+            TagArgs(key=key_two, value=value_two),
         ]
     )
 
     def check(tags: Sequence[Any] | None) -> None:
         assert tags is not None, "Expected tags to be not None"
         tag_map: dict[str, str] = {t["key"]: t["value"] for t in tags}
-        assert tag_map.get("env") == "testing", f"Missing or wrong 'env' tag in {tag_map}"
-        assert tag_map.get("owner") == "automation", f"Missing or wrong 'owner' tag in {tag_map}"
+        assert tag_map.get(key_one) == value_one, f"Missing or wrong {key_one!r} tag in {tag_map}"
+        assert tag_map.get(key_two) == value_two, f"Missing or wrong {key_two!r} tag in {tag_map}"
 
     return component.instance.tags.apply(check)
 
