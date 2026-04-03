@@ -174,14 +174,11 @@ class TestNewSecurityGroupConfig:
         return component.instance.id.apply(check)
 
     @_pulumi_test
-    def test_When_new_sg_config__Then_egress_rule_always_created(self) -> pulumi.Output[None]:
-        mocks = Ec2Mocks()
-        pulumi.runtime.set_mocks(mocks, project="test-project", stack="test-stack")
-
+    def test_When_new_sg_config__Then_egress_rule_always_created(self, ec2_mocks: Ec2Mocks) -> pulumi.Output[None]:
         component = _new_ec2_with_rdp()
 
         def check(_: str) -> None:
-            egress = [r for r in mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroupEgress"]
+            egress = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroupEgress"]
             assert len(egress) == 1
             assert egress[0].inputs.get("ipProtocol") == "-1"  # type: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
             assert egress[0].inputs.get("cidrIp") == "0.0.0.0/0"  # type: ignore[reportUnknownMemberType]
@@ -209,11 +206,8 @@ class TestNewSecurityGroupConfig:
 class TestExistingSecurityGroup:
     @_pulumi_test
     def test_When_existing_sg_config__Then_no_new_security_group_resource_created(
-        self, faker: Faker
+        self, faker: Faker, ec2_mocks: Ec2Mocks
     ) -> pulumi.Output[None]:
-        mocks = Ec2Mocks()
-        pulumi.runtime.set_mocks(mocks, project="test-project", stack="test-stack")
-
         sg_id = f"sg-{faker.hexify('????????')}"
         component = _new_ec2_with_rdp(
             security_group_config=ExistingSecurityGroupConfig(security_group_id=pulumi.Output.from_input(sg_id))
@@ -222,9 +216,11 @@ class TestExistingSecurityGroup:
         def check(_: str) -> None:
             # ec2.SecurityGroup.get() is a ReadResource, which flows through new_resource in the mock
             # with resource_id set to the ID being read. Assert we read the right one and never created a new one.
-            read_sgs = [r for r in mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroup" and r.resource_id]
+            read_sgs = [
+                r for r in ec2_mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroup" and r.resource_id
+            ]
             new_sgs = [
-                r for r in mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroup" and not r.resource_id
+                r for r in ec2_mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroup" and not r.resource_id
             ]
             assert [r.resource_id for r in read_sgs] == [sg_id]
             assert new_sgs == [], f"Expected no new SecurityGroup resources but got {new_sgs}"
