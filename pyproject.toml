@@ -1,6 +1,6 @@
 [project]
 name = "lab-auto-pulumi"
-version = "0.1.18"
+version = "0.2.0"
 description = "Pulumi helpers. Especially useful for tooling created by the LabAutomationAndScreening github organization."
 authors = [
     {name = "Eli Fine"},
@@ -34,6 +34,7 @@ dev = [
     # Specific to this repository
 
     "boto3-stubs[all]", # version specification is in main dependencies already
+    "faker>=40.11.0",
 
     # Managed by upstream template
     "pyright>=1.1.408",
