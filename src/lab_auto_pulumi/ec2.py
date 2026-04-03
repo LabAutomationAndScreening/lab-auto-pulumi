@@ -102,7 +102,7 @@ class Ec2WithRdp(ComponentResource):
                 ),
                 group_description=security_group_config.description,
                 tags=[TagArgs(key="Name", value=name), *common_tags_native()],
-                opts=ResourceOptions(parent=self),
+                opts=ResourceOptions(parent=self, delete_before_replace=True, replace_on_changes=["*"]),
             )
             for idx, rule_args in enumerate(security_group_config.ingress_rules):
                 if not rule_args.description:
@@ -116,7 +116,9 @@ class Ec2WithRdp(ComponentResource):
 
                 _ = ec2.SecurityGroupIngress(
                     append_resource_suffix(f"{name}-ingress-{resource_safe_description}", max_length=190),
-                    opts=ResourceOptions(parent=self.security_group),
+                    opts=ResourceOptions(
+                        parent=self.security_group, delete_before_replace=True, replace_on_changes=["*"]
+                    ),
                     ip_protocol=rule_args.ip_protocol,
                     from_port=rule_args.from_port,
                     to_port=rule_args.to_port,
@@ -125,7 +127,7 @@ class Ec2WithRdp(ComponentResource):
                 )
             _ = ec2.SecurityGroupEgress(  # TODO: see if this can be further restricted
                 append_resource_suffix(f"{name}-egress", max_length=190),
-                opts=ResourceOptions(parent=self.security_group),
+                opts=ResourceOptions(parent=self.security_group, delete_before_replace=True, replace_on_changes=["*"]),
                 ip_protocol="-1",
                 from_port=0,
                 to_port=0,
