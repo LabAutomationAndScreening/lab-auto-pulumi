@@ -32,15 +32,14 @@ dependencies = [
 [dependency-groups]
 dev = [
     # Specific to this repository
-
     "boto3-stubs[all]", # version specification is in main dependencies already
     "faker>=40.11.0",
 
     # Managed by upstream template
-    "pyright>=1.1.408",
-    "pytest>=9.0.2",
+    "pyright>=1.1.409",
+    "pytest>=9.0.3",
     "pytest-cov>=7.1.0",
-    "pytest-randomly>=4.0.1",
+    "pytest-randomly>=4.1.0",
 ]
 
 [tool.setuptools]

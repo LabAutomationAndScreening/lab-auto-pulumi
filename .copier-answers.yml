@@ -1,5 +1,5 @@
 # Changes here will be overwritten by Copier
-_commit: v0.0.62
+_commit: v0.0.65
 _src_path: gh:LabAutomationAndScreening/copier-python-package-template
 configure_python_asyncio: false
 configure_vcrpy: false
@@ -20,6 +20,7 @@ python_ci_versions:
 python_package_registry: PyPI
 python_version: 3.12.7
 repo_name: lab-auto-pulumi
+repo_names_for_codespaces_read_permissions: ''
 repo_org_name: LabAutomationAndScreening
 ssh_port_number: 64123
 use_codecov: true
