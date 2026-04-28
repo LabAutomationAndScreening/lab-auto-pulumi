@@ -17,23 +17,46 @@ This project is a Python library.
 
 ## Testing
 
-- Always run tests with an explicit path (e.g. uv run pytest tests/unit) — test runners discover all types by default.
+- Always run tests with an explicit path (e.g. uv run pytest tests/unit) — test runners discover all types (unit, integration, E2E...) by default.
+- When iterating on a single test, run that test in isolation first and confirm it is in the expected state (red or green) before widening to the full suite. Use the most targeted invocation available: a specific test function for Python (e.g. `uv run pytest path/to/test.py::test_name --no-cov`) or a file path and name filter for TypeScript (e.g. `pnpm test-unit -- path/to/test.spec.ts -t "test name" --no-coverage`). Only run the full suite once the target test behaves as expected.
 - Test coverage requirements are usually at 100%, so when running a subset of tests, always disable test coverage to avoid the test run failing for insufficient coverage.
 - Avoid magic values in comparisons in tests in all languages (like ruff rule PLR2004 specifies)
 - Prefer using random values in tests rather than arbitrary ones (e.g. the faker library, uuids, random.randint) when possible. For enums, pick randomly rather than hardcoding one value.
 - Avoid loops in tests — assert each item explicitly so failures pinpoint the exact element. When verifying a condition across all items in a collection, collect the violations into a list and assert it's empty (e.g., assert [x for x in items if bad_condition(x)] == []).
-- Key `data-testid` selectors off unique IDs (e.g. UUIDs), not human-readable names which may collide or change.
+- When a test's final assertion is an absence (e.g., element is `null`, list is empty, modal is closed), include a prior presence assertion confirming the expected state existed before the action that removed it. A test whose only assertion is an absence check can pass vacuously if setup silently failed.
+- When asserting a mock or spy was called with specific arguments, always constrain as tightly as possible. In order of preference: (1) assert called exactly once with those args (`assert_called_once_with` in Python, `toHaveBeenCalledExactlyOnceWith` in Vitest/Jest); (2) if multiple calls are expected, assert the total call count and use a positional or last-call assertion (`nthCalledWith`, `lastCalledWith` / `assert_has_calls` with `call_args_list[n]`); (3) plain "called with at any point" (`toHaveBeenCalledWith`, `assert_called_with`) is a last resort only when neither the call count nor the call order can reasonably be constrained.
+- When asserting an exception is raised, verify the error message includes all key constructor arguments — not just one identifying field. This ensures the error message is fully populated and catches cases where arguments are swapped or missing. In Python: use the `match` parameter in `pytest.raises`. In TypeScript: use a regex or substring in `toThrow`, or catch and assert on error properties individually.
+- Structure each test body in this order, with a single blank line separating each section:
+  1. **Constants** — random/faker values and test data objects
+  2. **Mocks/spies** — all spy and patch setups
+  3. **Arrange** — setup calls that establish the precondition (mounting, pre-act interactions, etc.)
+  4. *(blank line)*
+  5. **Act** — the action under test
+  6. *(blank line)*
+  7. **State capture** — variables extracted from the system under test purely for use in assertions (DOM queries, return values, captured state)
+  8. *(blank line)*
+  9. **Assertions**
+
+  For tests with multiple interaction steps (e.g. E2E or complex flows), repeat the Act → State capture → Assertions cycle, with a blank line between each cycle.
+
+  Keep blank lines to a minimum: only where they separate meaningful sections to enhance code readability.
 
 ### Python Testing
 
-- When using `mocker.spy` on a class-level method (including inherited ones), the spy records the unbound call, so assertions need `ANY` as the first argument to match self:  `spy.assert_called_once_with(ANY, expected_arg)`
+- When using `mocker.spy` on a class-level method (including inherited ones), the spy records the unbound call, so assertions need `ANY` as the first argument to match self: `spy.assert_called_once_with(ANY, expected_arg)`
 - Before writing new mock/spy helpers, check the `tests/unit/` folder for pre-built helpers in files like `fixtures.py` or `*mocks.py`
 - When a test needs a fixture only for its side effects (not its return value), use `@pytest.mark.usefixtures(fixture_name.__name__)` instead of adding an unused parameter with a noqa comment
 - Use `__name__` instead of string literals when referencing functions/methods (e.g., `mocker.patch.object(MyClass, MyClass.method.__name__)`, `pytest.mark.usefixtures(my_fixture.__name__)`). This enables IDE refactoring tools to catch renames.
 - When using the faker library, prefer the pytest fixture (provided by the faker library) over instantiating instances of Faker.
+- **Choosing between cassettes and mocks:** At the layer that directly wraps an external API or service, strongly prefer VCR cassette-recorded interactions (via pytest-recording/vcrpy) — they capture real HTTP traffic and verify the wire format, catching integration issues that mocks would miss. At layers above that (e.g. business logic, route handlers), mock the wrapper layer instead (e.g. `mocker.patch.object(ThresholdsRepository, ...)`) — there is no value in re-testing the HTTP interaction from higher up.
 - **Never hand-write VCR cassette YAML files.** Cassettes must be recorded from real HTTP interactions by running the test once with `--record-mode=once` against a live external service: `uv run pytest --record-mode=once <test path> --no-cov`. The default mode is `none` — a missing cassette will cause an error, which is expected until recorded.
 - **Never hand-edit syrupy snapshot files.** Snapshots are auto-generated — to create or update them, run `uv run pytest --snapshot-update <test path> --no-cov`. A missing snapshot causes the test to fail, which is expected until you run with `--snapshot-update`. When a snapshot mismatch occurs, fix the code if the change was unintentional; run `--snapshot-update` if it was intentional.
 - **Never hand-write or hand-edit pytest-reserial `.jsonl` recording files.** Recordings must be captured from real serial port traffic by running the test with `--record` while the device is connected: `uv run pytest --record <test path> --no-cov`. The default mode replays recordings — a missing recording causes an error, which is expected until recorded against a live device.
+
+### Frontend Testing
+
+- Key `data-testid` selectors off unique IDs (e.g. UUIDs), not human-readable names which may collide or change.
+- In DOM-based tests, scope queries to the tightest relevant container. Only query `document` or `document.body` directly to find the top-level portal/popup element (e.g. a Reka UI dialog via `[role="dialog"][data-state="open"]`); all further queries should run on that element, not on `document.body` again.
 
 # Agent Implementations & Configurations
 
@@ -43,13 +66,15 @@ This project is a Python library.
 
 ## Tooling
 
-- Always use `uv run python` instead of `python3` or `python` when running Python commands.
-- Prefer dedicated shell tools over `python3`/`python` for simple one-off tasks: use `jq` for JSON parsing, standard shell builtins for string manipulation, etc. Only reach for `python3` when no simpler tool covers the need.
+- ❌ Never chain commands (`&&`, `||`, `;`, `&`) — breaks permission allow-list matcher. ✅ One command per tool call. `cd` as separate prior call. Pipes (`|`) OK.
+- ❌ Never use `python3` or `python` directly. ✅ Always use `uv run python` for Python commands.
+- ❌ Never use `python3`/`python` for one-off data tasks. ✅ Use `jq` for JSON parsing, standard shell builtins for string manipulation. Only reach for `uv run python` when no dedicated tool covers the need.
+- ❌ Never use `uv run python -c "import ...; print(...)"` or `inspect` to introspect Python source. ✅ Read source files directly or grep for symbols — the code is on disk and can be read without running it.
 - Check .devcontainer/devcontainer.json for tooling versions (Python, Node, etc.) when reasoning about version-specific stdlib or tooling behavior.
 - For frontend tests, run commands via `pnpm` scripts from `frontend/package.json` — never invoke tools directly (not pnpm exec <tool>, npx <tool>, etc.). ✅ pnpm test-unit  ❌ pnpm vitest ... or npx vitest ...
 - For linting and type-checking, prefer `pre-commit run <hook-id>` over invoking tools directly — this matches the permission allow-list and mirrors what CI runs. Key hook IDs: `typescript-check`, `eslint`, `pyright`, `ruff`, `ruff-format`.
 - Never rely on IDE diagnostics for ruff warnings — the IDE may not respect the project's ruff.toml config. Run `pre-commit run ruff -a` to get accurate results.
-- When running terminal commands, execute exactly one command per tool call. Do not chain commands with &&, ||, ;, or & — this prohibition has no exceptions, even for `cd && ...` patterns. Use absolute paths instead of `cd` to avoid needing to chain. Pipes (|) are allowed for output transformation (e.g., head, tail, grep). If two sequential commands are needed, run them in separate tool calls. Chained commands break the permission allow-list matcher and cause unnecessary permission prompts
+- Never use `pnpm --prefix <path>` or `uv --directory <path>` to target a different directory — these flags break the permission allow-list matcher the same way chained `cd &&` commands do. Instead, rely on the working directory already being correct (the cwd persists between Bash tool calls), or issue a plain `cd <path>` as a separate prior tool call to reposition before running the command.
 - Never use backslash line continuations in shell commands — always write the full command on a single line. Backslashes break the permission allow-list matcher.
 - **Never manually edit files in any `generated/` folder.** These files are produced by codegen tooling (typically Kiota) and any manual changes will be overwritten. If a generated file needs to change, update the source (e.g. the OpenAPI schema) and re-run the generator.
 
@@ -97,7 +122,7 @@ bd close bd-42 --reason "Completed" --json
 After every CRUD command on an issue, export it:
 
 ```bash
-bd export -o .claude/.beads/issues-dump.jsonl
+bd export -o [relative path to repository root]/.claude/.beads/issues-dump.jsonl
 ```
 
 ### Issue Types
