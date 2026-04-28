@@ -28,13 +28,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [0.2.1] - 2026-04-28
+
+### Fixed
+- Do not delete security groups on EC2 before replacement
+
+---
+
 ## [0.1.18] - 2024-12-22
 
 ### Added
 - Python 3.14 support
 
 ---
-
 
 ## [0.1.0] - 2024-12-18
 

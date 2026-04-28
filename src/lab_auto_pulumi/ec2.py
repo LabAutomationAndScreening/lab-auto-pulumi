@@ -102,7 +102,14 @@ class Ec2WithRdp(ComponentResource):
                 ),
                 group_description=security_group_config.description,
                 tags=[TagArgs(key="Name", value=name), *common_tags_native()],
-                opts=ResourceOptions(parent=self, delete_before_replace=True, replace_on_changes=["*"]),
+                opts=ResourceOptions(
+                    parent=self,
+                    replace_on_changes=[  # these are immutable  https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-securitygroup.html
+                        "groupDescription",
+                        "groupName",
+                        "vpcId",
+                    ],
+                ),
             )
             for idx, rule_args in enumerate(security_group_config.ingress_rules):
                 if not rule_args.description:
