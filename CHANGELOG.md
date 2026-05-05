@@ -27,6 +27,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Describe security fixes or improvements.
 
 ---
+## [0.2.2] - 2026-05-05
+### Added
+- ORG_MANAGED_PARAMS_AND_SECRETS_PREFIX constant for consistent namespace for all managed secrets and ssm params.
+
+### Deprecated
+- ORG_MANAGED_SSM_PARAM_PREFIX has been deprecated in favor of ORG_MANAGED_PARAMS_AND_SECRETS_PREFIX. Value is same but name changed.
 
 ## [0.2.1] - 2026-04-28
 
