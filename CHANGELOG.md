@@ -28,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 ## [0.2.2] - 2026-05-05
+
 ### Added
 - ORG_MANAGED_PARAMS_AND_SECRETS_PREFIX constant for consistent namespace for all managed secrets and ssm params.
 
