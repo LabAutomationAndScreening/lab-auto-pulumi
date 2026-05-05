@@ -1,3 +1,5 @@
+from typing import Any
+
 from . import constants
 from .constants import CENTRAL_NETWORKING_SSM_PREFIX
 from .constants import GENERIC_CENTRAL_PRIVATE_SUBNET_NAME
@@ -8,7 +10,7 @@ from .constants import GITHUB_PREVIEW_TOKEN_SECRET_NAME
 from .constants import MANAGEMENT_ACCOUNT_ID_PARAM_NAME
 from .constants import MANUAL_IAC_SECRETS_PREFIX
 from .constants import MANUAL_SECRETS_PREFIX
-from .constants import ORG_MANAGED_SSM_PARAM_PREFIX
+from .constants import ORG_MANAGED_PARAMS_AND_SECRETS_PREFIX
 from .constants import SSO_INTO_EC2_PERM_SET_NAME
 from .constants import TAG_KEY_FOR_SSO_INTO_EC2_ACCESS
 from .constants import TAG_VALUE_FOR_DELETE_ACCESS
@@ -52,7 +54,7 @@ __all__ = [
     "MANUAL_IAC_SECRETS_PREFIX",
     "MANUAL_SECRETS_PREFIX",
     "ORG_INFO",
-    "ORG_MANAGED_SSM_PARAM_PREFIX",
+    "ORG_MANAGED_PARAMS_AND_SECRETS_PREFIX",
     "SSO_INTO_EC2_PERM_SET_NAME",
     "TAG_KEY_FOR_SSO_INTO_EC2_ACCESS",
     "TAG_VALUE_FOR_DELETE_ACCESS",
@@ -85,3 +87,13 @@ __all__ = [
     "get_ssm_param_value",
     "principal_in_org_condition",
 ]
+
+
+def __getattr__(name: str) -> Any:  # noqa: ANN401 # In this case it can in fact by anything so Any is appropriate
+    if name == "ORG_MANAGED_SSM_PARAM_PREFIX":
+        from .constants import (  # noqa:PLC0415 # Must be here so that we can verify the deprecation in a test otherwise it happens at init time and we miss it.
+            ORG_MANAGED_SSM_PARAM_PREFIX,
+        )
+
+        return ORG_MANAGED_SSM_PARAM_PREFIX
+    raise AttributeError(f"module {__name__} has no attribute {name}")  # noqa:TRY003 # this is infact an attribute error. Its fine
