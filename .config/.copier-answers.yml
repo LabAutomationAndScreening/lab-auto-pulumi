@@ -1,14 +1,14 @@
 # Changes here will be overwritten by Copier
-_commit: v0.0.65
+_commit: v0.0.78
 _src_path: gh:LabAutomationAndScreening/copier-python-package-template
 configure_python_asyncio: false
 configure_vcrpy: false
 create_docs: false
+deploy_as_executable: false
 description: Pulumi helpers
 full_repo_url: https://github.com/LabAutomationAndScreening/lab-auto-pulumi
 install_aws_ssm_port_forwarding_plugin: false
 install_claude_cli: true
-is_frozen_executable: false
 is_open_source: true
 package_name: lab-auto-pulumi
 primary_author: Eli Fine
