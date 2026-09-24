@@ -17,7 +17,7 @@ from lab_auto_pulumi.ec2 import Ec2WithRdp
 from lab_auto_pulumi.ec2 import ExistingSecurityGroupConfig
 from lab_auto_pulumi.ec2 import NewSecurityGroupConfig
 
-_pulumi_test = pulumi.runtime.test  # type: ignore[reportUnknownMemberType] # pulumi.runtime.test is partially typed in the Pulumi SDK; alias avoids repeating the ignore on every test
+_pulumi_test = pulumi.runtime.test  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType] # pulumi.runtime.test is partially typed in the Pulumi SDK; alias avoids repeating the ignore on every test
 
 _EC2_INSTANCE_TYPES = ["t3.micro", "t3.large", "m5.xlarge", "c5.2xlarge"]
 
@@ -31,7 +31,7 @@ class Ec2Mocks(pulumi.runtime.Mocks):
     def new_resource(self, args: pulumi.runtime.MockResourceArgs) -> tuple[str, dict[str, Any]]:  # type: ignore[override] # pyright infers Optional[str] for id but str is always safe here
         self.created_resources.append(args)
         resource_id = args.resource_id or f"{args.name}-id"
-        return (resource_id, args.inputs)  # type: ignore[return-value] # Pulumi SDK types inputs as dict[Unknown, Unknown]
+        return (resource_id, args.inputs)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
 
     def call(self, args: pulumi.runtime.MockCallArgs) -> dict[str, Any]:  # type: ignore[override] # pyright infers tuple[dict, Optional[list]] but plain dict is accepted
         self.captured_calls.append(args)
@@ -169,9 +169,9 @@ class TestNewSecurityGroupConfig:
 
         def check(_: str) -> None:
             ingress = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroupIngress"]
-            assert [r.inputs.get("ipProtocol") for r in ingress] == ["tcp"]  # type: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
-            assert [r.inputs.get("fromPort") for r in ingress] == [3389]  # type: ignore[reportUnknownMemberType]
-            assert [r.inputs.get("toPort") for r in ingress] == [3389]  # type: ignore[reportUnknownMemberType]
+            assert [r.inputs.get("ipProtocol") for r in ingress] == ["tcp"]  # pyright: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
+            assert [r.inputs.get("fromPort") for r in ingress] == [3389]  # pyright: ignore[reportUnknownMemberType]
+            assert [r.inputs.get("toPort") for r in ingress] == [3389]  # pyright: ignore[reportUnknownMemberType]
 
         return component.instance.id.apply(check)
 
@@ -182,8 +182,8 @@ class TestNewSecurityGroupConfig:
         def check(_: str) -> None:
             egress = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroupEgress"]
             assert len(egress) == 1
-            assert egress[0].inputs.get("ipProtocol") == "-1"  # type: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
-            assert egress[0].inputs.get("cidrIp") == "0.0.0.0/0"  # type: ignore[reportUnknownMemberType]
+            assert egress[0].inputs.get("ipProtocol") == "-1"  # pyright: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
+            assert egress[0].inputs.get("cidrIp") == "0.0.0.0/0"  # pyright: ignore[reportUnknownMemberType]
 
         return component.instance.id.apply(check)
 
