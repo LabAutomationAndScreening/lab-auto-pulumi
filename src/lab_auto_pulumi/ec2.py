@@ -82,9 +82,9 @@ class Ec2WithRdp(ComponentResource):
             opts=ResourceOptions(parent=self),
         )
 
-        instance_profile = iam.InstanceProfile(
+        instance_profile = iam.InstanceProfile(  # pyrefly: ignore[no-matching-overload] # role_name is typed Output[str | None] because it's optional on input, but AWS always generates one once the role exists
             append_resource_suffix(name),
-            roles=[self.instance_role.role_name],  # pyright: ignore[reportArgumentType] # pyright thinks only inputs can be set as role names, but Outputs seem to work fine
+            roles=[self.instance_role.role_name],
             opts=ResourceOptions(parent=self),
         )
         if isinstance(security_group_config, ExistingSecurityGroupConfig):
