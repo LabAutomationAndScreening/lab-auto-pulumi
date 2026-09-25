@@ -9,8 +9,11 @@ import pulumi
 import pulumi.runtime
 import pytest
 from faker import Faker
+from pulumi_aws.iam import GetPolicyDocumentStatementArgsDict
 from pulumi_aws_native import TagArgs
 from pulumi_aws_native import ec2
+from pulumi_aws_native.outputs import Tag
+from pydantic import TypeAdapter
 
 from lab_auto_pulumi import ec2 as lab_auto_ec2_module
 from lab_auto_pulumi.ec2 import Ec2WithRdp
@@ -20,6 +23,7 @@ from lab_auto_pulumi.ec2 import NewSecurityGroupConfig
 _pulumi_test = pulumi.runtime.test  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType] # pulumi.runtime.test is partially typed in the Pulumi SDK; alias avoids repeating the ignore on every test
 
 _EC2_INSTANCE_TYPES = ["t3.micro", "t3.large", "m5.xlarge", "c5.2xlarge"]
+_POLICY_STATEMENTS_ADAPTER = TypeAdapter(list[GetPolicyDocumentStatementArgsDict])
 
 
 class Ec2Mocks(pulumi.runtime.Mocks):
@@ -285,9 +289,9 @@ def test_When_additional_instance_tags_provided__Then_tags_appear_on_instance(fa
         ]
     )
 
-    def check(tags: Sequence[Any] | None) -> None:
+    def check(tags: Sequence[Tag] | None) -> None:
         assert tags is not None, "Expected tags to be not None"
-        tag_map: dict[str, str] = {t["key"]: t["value"] for t in tags}
+        tag_map = {t.key: t.value for t in tags}
         assert tag_map.get(key_one) == value_one, f"Missing or wrong {key_one!r} tag in {tag_map}"
         assert tag_map.get(key_two) == value_two, f"Missing or wrong {key_two!r} tag in {tag_map}"
 
@@ -315,15 +319,15 @@ def test_When_component_created__Then_instance_role_trust_policy_allows_ec2(
     def check(_: str) -> None:
         policy_calls = [c for c in ec2_mocks.captured_calls if c.token == "aws:iam/getPolicyDocument:getPolicyDocument"]  # noqa:S105 # definitely not a password
         assert len(policy_calls) == 1
-        call_args: dict[str, Any] = policy_calls[0].args  # type: ignore[reportUnknownMemberType] # MockCallArgs.args is typed as bare dict in the Pulumi SDK
-        statements: list[dict[str, Any]] = call_args.get("statements", [])
+        statements = _POLICY_STATEMENTS_ADAPTER.validate_python(policy_calls[0].args["statements"])  # pyright: ignore[reportUnknownMemberType] # MockCallArgs.args is typed as bare dict in the Pulumi SDK
         assert len(statements) == 1
         stmt = statements[0]
         assert stmt.get("effect") == "Allow"
         assert stmt.get("actions") == ["sts:AssumeRole"]
-        principals: list[dict[str, Any]] = stmt.get("principals", [])
+        principals = stmt.get("principals")
+        assert principals is not None
         assert len(principals) == 1
-        assert principals[0].get("type") == "Service"
-        assert principals[0].get("identifiers") == ["ec2.amazonaws.com"]
+        assert principals[0]["type"] == "Service"
+        assert principals[0]["identifiers"] == ["ec2.amazonaws.com"]
 
     return component.instance_role.assume_role_policy_document.apply(check)
