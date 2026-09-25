@@ -160,7 +160,7 @@ class Ec2WithRdp(ComponentResource):
                     device_name="/dev/sda1", ebs=ec2.InstanceEbsArgs(volume_size=root_volume_gb, volume_type="gp3")
                 )
             ],
-            iam_instance_profile=instance_profile.instance_profile_name,  # pyright: ignore[reportArgumentType] # pyright thinks only inputs can be set as instance profile names, but Outputs seem to work fine
+            iam_instance_profile=instance_profile.instance_profile_name,
             tags=[TagArgs(key="Name", value=name), *additional_instance_tags, *common_tags_native()],
             user_data=None
             if user_data is None
