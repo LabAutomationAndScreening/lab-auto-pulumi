@@ -59,7 +59,9 @@ class Ec2WithRdp(ComponentResource):
         parent: Resource | None = None,
     ):
         super().__init__("labauto:Ec2WithRdp", append_resource_suffix(name), None, opts=ResourceOptions(parent=parent))
-        replace_on_changes = ["user_data"] if not persist_user_data else []
+        replace_on_changes: list[str] = []
+        if not persist_user_data:
+            replace_on_changes = ["user_data"]
         self.name = name
         if additional_instance_tags is None:
             additional_instance_tags = []
