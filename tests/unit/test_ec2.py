@@ -126,7 +126,7 @@ class TestNewSecurityGroupConfig:
             instance_type=random.choice(_EC2_INSTANCE_TYPES),
         )
 
-        def check(args: list[Any]) -> None:
+        def check(args: list[object]) -> None:
             actual_image_id, actual_subnet_id = args
             assert actual_image_id == image_id
             assert actual_subnet_id == "mock-id", f"Expected 'mock-id' but got {actual_subnet_id!r}"
@@ -240,7 +240,7 @@ class TestExistingSecurityGroup:
             security_group_config=ExistingSecurityGroupConfig(security_group_id=pulumi.Output.from_input(sg_id))
         )
 
-        def check(sg_ids: Sequence[Any] | None) -> None:
+        def check(sg_ids: Sequence[object] | None) -> None:
             assert sg_ids is not None, "Expected sg_ids to be not None"
             assert sg_id in sg_ids, f"Expected {sg_id!r} in {sg_ids}"
 
