@@ -30,7 +30,7 @@ class Ec2Mocks(pulumi.runtime.Mocks):
 
     def new_resource(self, args: pulumi.runtime.MockResourceArgs) -> tuple[str, dict[str, Any]]:  # type: ignore[override] # pyright infers Optional[str] for id but str is always safe here
         self.created_resources.append(args)
-        resource_id = args.resource_id or f"{args.name}-id"
+        resource_id = args.resource_id if bool(args.resource_id) else f"{args.name}-id"
         return (resource_id, args.inputs)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
 
     def call(self, args: pulumi.runtime.MockCallArgs) -> dict[str, Any]:  # type: ignore[override] # pyright infers tuple[dict, Optional[list]] but plain dict is accepted
@@ -219,10 +219,14 @@ class TestExistingSecurityGroup:
             # ec2.SecurityGroup.get() is a ReadResource, which flows through new_resource in the mock
             # with resource_id set to the ID being read. Assert we read the right one and never created a new one.
             read_sgs = [
-                r for r in ec2_mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroup" and r.resource_id
+                r
+                for r in ec2_mocks.created_resources
+                if r.typ == "aws-native:ec2:SecurityGroup" and bool(r.resource_id)
             ]
             new_sgs = [
-                r for r in ec2_mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroup" and not r.resource_id
+                r
+                for r in ec2_mocks.created_resources
+                if r.typ == "aws-native:ec2:SecurityGroup" and not bool(r.resource_id)
             ]
             assert [r.resource_id for r in read_sgs] == [sg_id]
             assert new_sgs == [], f"Expected no new SecurityGroup resources but got {new_sgs}"

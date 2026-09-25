@@ -112,14 +112,15 @@ class Ec2WithRdp(ComponentResource):
                 ),
             )
             for idx, rule_args in enumerate(security_group_config.ingress_rules):
-                if not rule_args.description:
+                description = rule_args.description
+                if description is None:
+                    description = ""
+                assert isinstance(description, str), f"Expected str but got type {type(description)} for {description}"
+                if description == "":
                     raise ValueError(  # noqa: TRY003 # not worth making a custom exception for this...especially until we figure out how to test Pulumi components
                         f"Security group ingress rule index {idx} must have a description ({rule_args})"
                     )
-                assert isinstance(rule_args.description, str), (
-                    f"Expected str but got type {type(rule_args.description)} for {rule_args.description}"
-                )
-                resource_safe_description = create_resource_name_safe_str(rule_args.description)
+                resource_safe_description = create_resource_name_safe_str(description)
 
                 _ = ec2.SecurityGroupIngress(
                     append_resource_suffix(f"{name}-ingress-{resource_safe_description}", max_length=190),
