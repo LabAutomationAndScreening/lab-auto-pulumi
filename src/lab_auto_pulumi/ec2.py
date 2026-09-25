@@ -59,7 +59,9 @@ class Ec2WithRdp(ComponentResource):
         parent: Resource | None = None,
     ):
         super().__init__("labauto:Ec2WithRdp", append_resource_suffix(name), None, opts=ResourceOptions(parent=parent))
-        replace_on_changes = ["user_data"] if not persist_user_data else []
+        replace_on_changes: list[str] = []
+        if not persist_user_data:
+            replace_on_changes = ["user_data"]
         self.name = name
         if additional_instance_tags is None:
             additional_instance_tags = []
@@ -82,9 +84,9 @@ class Ec2WithRdp(ComponentResource):
             opts=ResourceOptions(parent=self),
         )
 
-        instance_profile = iam.InstanceProfile(
+        instance_profile = iam.InstanceProfile(  # pyrefly: ignore[no-matching-overload] # role_name is typed Output[str | None] because it's optional on input, but AWS always generates one once the role exists
             append_resource_suffix(name),
-            roles=[self.instance_role.role_name],  # pyright: ignore[reportArgumentType] # pyright thinks only inputs can be set as role names, but Outputs seem to work fine
+            roles=[self.instance_role.role_name],
             opts=ResourceOptions(parent=self),
         )
         if isinstance(security_group_config, ExistingSecurityGroupConfig):
@@ -112,14 +114,15 @@ class Ec2WithRdp(ComponentResource):
                 ),
             )
             for idx, rule_args in enumerate(security_group_config.ingress_rules):
-                if not rule_args.description:
+                description = rule_args.description
+                if description is None:
+                    description = ""
+                assert isinstance(description, str), f"Expected str but got type {type(description)} for {description}"
+                if description == "":
                     raise ValueError(  # noqa: TRY003 # not worth making a custom exception for this...especially until we figure out how to test Pulumi components
                         f"Security group ingress rule index {idx} must have a description ({rule_args})"
                     )
-                assert isinstance(rule_args.description, str), (
-                    f"Expected str but got type {type(rule_args.description)} for {rule_args.description}"
-                )
-                resource_safe_description = create_resource_name_safe_str(rule_args.description)
+                resource_safe_description = create_resource_name_safe_str(description)
 
                 _ = ec2.SecurityGroupIngress(
                     append_resource_suffix(f"{name}-ingress-{resource_safe_description}", max_length=190),
@@ -157,7 +160,7 @@ class Ec2WithRdp(ComponentResource):
                     device_name="/dev/sda1", ebs=ec2.InstanceEbsArgs(volume_size=root_volume_gb, volume_type="gp3")
                 )
             ],
-            iam_instance_profile=instance_profile.instance_profile_name,  # pyright: ignore[reportArgumentType] # pyright thinks only inputs can be set as instance profile names, but Outputs seem to work fine
+            iam_instance_profile=instance_profile.instance_profile_name,
             tags=[TagArgs(key="Name", value=name), *additional_instance_tags, *common_tags_native()],
             user_data=None
             if user_data is None

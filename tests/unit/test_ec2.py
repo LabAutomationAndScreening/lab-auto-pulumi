@@ -9,17 +9,21 @@ import pulumi
 import pulumi.runtime
 import pytest
 from faker import Faker
+from pulumi_aws.iam import GetPolicyDocumentStatementArgsDict
 from pulumi_aws_native import TagArgs
 from pulumi_aws_native import ec2
+from pulumi_aws_native.outputs import Tag
+from pydantic import TypeAdapter
 
 from lab_auto_pulumi import ec2 as lab_auto_ec2_module
 from lab_auto_pulumi.ec2 import Ec2WithRdp
 from lab_auto_pulumi.ec2 import ExistingSecurityGroupConfig
 from lab_auto_pulumi.ec2 import NewSecurityGroupConfig
 
-_pulumi_test = pulumi.runtime.test  # type: ignore[reportUnknownMemberType] # pulumi.runtime.test is partially typed in the Pulumi SDK; alias avoids repeating the ignore on every test
+_pulumi_test = pulumi.runtime.test  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType] # pulumi.runtime.test is partially typed in the Pulumi SDK; alias avoids repeating the ignore on every test
 
 _EC2_INSTANCE_TYPES = ["t3.micro", "t3.large", "m5.xlarge", "c5.2xlarge"]
+_POLICY_STATEMENTS_ADAPTER = TypeAdapter(list[GetPolicyDocumentStatementArgsDict])
 
 
 class Ec2Mocks(pulumi.runtime.Mocks):
@@ -30,8 +34,8 @@ class Ec2Mocks(pulumi.runtime.Mocks):
 
     def new_resource(self, args: pulumi.runtime.MockResourceArgs) -> tuple[str, dict[str, Any]]:  # type: ignore[override] # pyright infers Optional[str] for id but str is always safe here
         self.created_resources.append(args)
-        resource_id = args.resource_id or f"{args.name}-id"
-        return (resource_id, args.inputs)  # type: ignore[return-value] # Pulumi SDK types inputs as dict[Unknown, Unknown]
+        resource_id = args.resource_id if bool(args.resource_id) else f"{args.name}-id"
+        return (resource_id, args.inputs)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
 
     def call(self, args: pulumi.runtime.MockCallArgs) -> dict[str, Any]:  # type: ignore[override] # pyright infers tuple[dict, Optional[list]] but plain dict is accepted
         self.captured_calls.append(args)
@@ -126,7 +130,7 @@ class TestNewSecurityGroupConfig:
             instance_type=random.choice(_EC2_INSTANCE_TYPES),
         )
 
-        def check(args: list[Any]) -> None:
+        def check(args: list[object]) -> None:
             actual_image_id, actual_subnet_id = args
             assert actual_image_id == image_id
             assert actual_subnet_id == "mock-id", f"Expected 'mock-id' but got {actual_subnet_id!r}"
@@ -169,9 +173,9 @@ class TestNewSecurityGroupConfig:
 
         def check(_: str) -> None:
             ingress = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroupIngress"]
-            assert [r.inputs.get("ipProtocol") for r in ingress] == ["tcp"]  # type: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
-            assert [r.inputs.get("fromPort") for r in ingress] == [3389]  # type: ignore[reportUnknownMemberType]
-            assert [r.inputs.get("toPort") for r in ingress] == [3389]  # type: ignore[reportUnknownMemberType]
+            assert [r.inputs.get("ipProtocol") for r in ingress] == ["tcp"]  # pyright: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
+            assert [r.inputs.get("fromPort") for r in ingress] == [3389]  # pyright: ignore[reportUnknownMemberType]
+            assert [r.inputs.get("toPort") for r in ingress] == [3389]  # pyright: ignore[reportUnknownMemberType]
 
         return component.instance.id.apply(check)
 
@@ -182,8 +186,8 @@ class TestNewSecurityGroupConfig:
         def check(_: str) -> None:
             egress = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroupEgress"]
             assert len(egress) == 1
-            assert egress[0].inputs.get("ipProtocol") == "-1"  # type: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
-            assert egress[0].inputs.get("cidrIp") == "0.0.0.0/0"  # type: ignore[reportUnknownMemberType]
+            assert egress[0].inputs.get("ipProtocol") == "-1"  # pyright: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
+            assert egress[0].inputs.get("cidrIp") == "0.0.0.0/0"  # pyright: ignore[reportUnknownMemberType]
 
         return component.instance.id.apply(check)
 
@@ -219,10 +223,14 @@ class TestExistingSecurityGroup:
             # ec2.SecurityGroup.get() is a ReadResource, which flows through new_resource in the mock
             # with resource_id set to the ID being read. Assert we read the right one and never created a new one.
             read_sgs = [
-                r for r in ec2_mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroup" and r.resource_id
+                r
+                for r in ec2_mocks.created_resources
+                if r.typ == "aws-native:ec2:SecurityGroup" and bool(r.resource_id)
             ]
             new_sgs = [
-                r for r in ec2_mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroup" and not r.resource_id
+                r
+                for r in ec2_mocks.created_resources
+                if r.typ == "aws-native:ec2:SecurityGroup" and not bool(r.resource_id)
             ]
             assert [r.resource_id for r in read_sgs] == [sg_id]
             assert new_sgs == [], f"Expected no new SecurityGroup resources but got {new_sgs}"
@@ -236,7 +244,7 @@ class TestExistingSecurityGroup:
             security_group_config=ExistingSecurityGroupConfig(security_group_id=pulumi.Output.from_input(sg_id))
         )
 
-        def check(sg_ids: Sequence[Any] | None) -> None:
+        def check(sg_ids: Sequence[object] | None) -> None:
             assert sg_ids is not None, "Expected sg_ids to be not None"
             assert sg_id in sg_ids, f"Expected {sg_id!r} in {sg_ids}"
 
@@ -281,9 +289,9 @@ def test_When_additional_instance_tags_provided__Then_tags_appear_on_instance(fa
         ]
     )
 
-    def check(tags: Sequence[Any] | None) -> None:
+    def check(tags: Sequence[Tag] | None) -> None:
         assert tags is not None, "Expected tags to be not None"
-        tag_map: dict[str, str] = {t["key"]: t["value"] for t in tags}
+        tag_map = {t.key: t.value for t in tags}
         assert tag_map.get(key_one) == value_one, f"Missing or wrong {key_one!r} tag in {tag_map}"
         assert tag_map.get(key_two) == value_two, f"Missing or wrong {key_two!r} tag in {tag_map}"
 
@@ -311,15 +319,15 @@ def test_When_component_created__Then_instance_role_trust_policy_allows_ec2(
     def check(_: str) -> None:
         policy_calls = [c for c in ec2_mocks.captured_calls if c.token == "aws:iam/getPolicyDocument:getPolicyDocument"]  # noqa:S105 # definitely not a password
         assert len(policy_calls) == 1
-        call_args: dict[str, Any] = policy_calls[0].args  # type: ignore[reportUnknownMemberType] # MockCallArgs.args is typed as bare dict in the Pulumi SDK
-        statements: list[dict[str, Any]] = call_args.get("statements", [])
+        statements = _POLICY_STATEMENTS_ADAPTER.validate_python(policy_calls[0].args["statements"])  # pyright: ignore[reportUnknownMemberType] # MockCallArgs.args is typed as bare dict in the Pulumi SDK
         assert len(statements) == 1
         stmt = statements[0]
         assert stmt.get("effect") == "Allow"
         assert stmt.get("actions") == ["sts:AssumeRole"]
-        principals: list[dict[str, Any]] = stmt.get("principals", [])
+        principals = stmt.get("principals")
+        assert principals is not None
         assert len(principals) == 1
-        assert principals[0].get("type") == "Service"
-        assert principals[0].get("identifiers") == ["ec2.amazonaws.com"]
+        assert principals[0]["type"] == "Service"
+        assert principals[0]["identifiers"] == ["ec2.amazonaws.com"]
 
     return component.instance_role.assume_role_policy_document.apply(check)
