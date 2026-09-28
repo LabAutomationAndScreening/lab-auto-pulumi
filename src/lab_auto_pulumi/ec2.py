@@ -40,6 +40,29 @@ class ExistingSecurityGroupConfig(BaseModel):
     security_group_id: Output[str]
 
 
+def _dcv_license_policy() -> iam.RolePolicyArgs:
+    # https://docs.aws.amazon.com/dcv/latest/adminguide/setting-up-license.html
+    return iam.RolePolicyArgs(
+        policy_name="DcvLicenseAccess",
+        policy_document={
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": "s3:GetObject",
+                    "Resource": Output.concat(
+                        "arn:",
+                        get_partition_output().partition,
+                        ":s3:::dcv-license.",
+                        get_region_output().region,
+                        "/*",
+                    ),
+                }
+            ],
+        },
+    )
+
+
 class Ec2WithRdp(ComponentResource):
     def __init__(  # noqa: PLR0913 # yes it's a lot to configure, but they're all kwargs
         self,
@@ -71,27 +94,7 @@ class Ec2WithRdp(ComponentResource):
         resource_name = f"{name}-ec2"
         inline_policies: list[iam.RolePolicyArgs] | None = None
         if enable_dcv:
-            inline_policies = [
-                iam.RolePolicyArgs(
-                    policy_name="DcvLicenseAccess",
-                    policy_document={
-                        "Version": "2012-10-17",
-                        "Statement": [
-                            {
-                                "Effect": "Allow",
-                                "Action": "s3:GetObject",
-                                "Resource": Output.concat(
-                                    "arn:",
-                                    get_partition_output().partition,
-                                    ":s3:::dcv-license.",
-                                    get_region_output().region,
-                                    "/*",
-                                ),
-                            }
-                        ],
-                    },
-                )
-            ]
+            inline_policies = [_dcv_license_policy()]
         self.instance_role = iam.Role(
             append_resource_suffix(resource_name),
             assume_role_policy_document=get_policy_document(
