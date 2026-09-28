@@ -2,6 +2,8 @@ import base64
 import json
 import random
 from collections.abc import Sequence
+from enum import Enum
+from enum import auto
 from typing import Any
 from unittest import mock
 
@@ -27,6 +29,10 @@ _EC2_INSTANCE_TYPES = ["t3.micro", "t3.large", "m5.xlarge", "c5.2xlarge"]
 _AWS_REGIONS = ["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-2"]
 _AWS_PARTITIONS = ["aws", "aws-cn", "aws-us-gov"]
 _POLICY_STATEMENTS_ADAPTER = TypeAdapter(list[GetPolicyDocumentStatementArgsDict])
+
+
+class _Unset(Enum):
+    TOKEN = auto()
 
 
 class Ec2Mocks(pulumi.runtime.Mocks):
@@ -73,9 +79,9 @@ def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more rea
     instance_type: str | None = None,
     image_id: str | None = None,
     security_group_config: NewSecurityGroupConfig | ExistingSecurityGroupConfig | None = None,
-    user_data: pulumi.Output[str] | None = None,
+    user_data: pulumi.Output[str] | _Unset | None = _Unset.TOKEN,
     additional_instance_tags: list[TagArgs] | None = None,
-    enable_dcv: bool = False,
+    enable_dcv: bool | None = None,
 ) -> Ec2WithRdp:
     _faker = Faker()
     if name is None:
@@ -87,7 +93,17 @@ def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more rea
     if image_id is None:
         image_id = f"ami-{_faker.hexify('????????')}"
     if security_group_config is None:
-        security_group_config = NewSecurityGroupConfig(central_networking_vpc_name=_faker.slug())
+        security_group_config = _random_security_group_config(_faker)
+    if isinstance(user_data, _Unset):
+        resolved_user_data = random.choice([None, pulumi.Output.from_input(_faker.sentence())])
+    else:
+        resolved_user_data = user_data
+    if additional_instance_tags is None:
+        additional_instance_tags = [
+            TagArgs(key=_faker.unique.word(), value=_faker.word()) for _ in range(random.randint(0, 3))
+        ]
+    if enable_dcv is None:
+        enable_dcv = random.choice([True, False])
     with (
         mock.patch.object(lab_auto_ec2_module, lab_auto_ec2_module.common_tags_native.__name__, return_value=[]),
         mock.patch.object(
@@ -102,14 +118,57 @@ def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more rea
             instance_type=instance_type,
             image_id=image_id,
             security_group_config=security_group_config,
-            user_data=user_data,
+            user_data=resolved_user_data,
             additional_instance_tags=additional_instance_tags,
             enable_dcv=enable_dcv,
         )
 
 
+def _random_security_group_config(faker: Faker) -> NewSecurityGroupConfig | ExistingSecurityGroupConfig:
+    ingress_port = random.randint(1, 65535)
+    return random.choice(
+        [
+            NewSecurityGroupConfig(central_networking_vpc_name=faker.slug()),
+            NewSecurityGroupConfig(
+                central_networking_vpc_name=faker.slug(),
+                ingress_rules=[
+                    ec2.SecurityGroupIngressArgs(
+                        description=faker.sentence(),
+                        ip_protocol=random.choice(["tcp", "udp"]),
+                        from_port=ingress_port,
+                        to_port=ingress_port,
+                    )
+                ],
+            ),
+            ExistingSecurityGroupConfig(security_group_id=pulumi.Output.from_input(f"sg-{faker.hexify('????????')}")),
+        ]
+    )
+
+
 def _ssm_side_effect(param: str) -> str:
     return f"mock-{param.rsplit('/', maxsplit=1)[-1]}"
+
+
+def _expected_dcv_license_policy(mocks: Ec2Mocks) -> tuple[str, dict[str, object]]:
+    return (
+        "DcvLicenseAccess",
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": "s3:GetObject",
+                    "Resource": f"arn:{mocks.partition}:s3:::dcv-license.{mocks.region}/*",
+                }
+            ],
+        },
+    )
+
+
+def _inline_policies(policies: Sequence[RolePolicy] | None) -> list[tuple[str, object]]:
+    if policies is None:
+        return []
+    return [(p.policy_name, p.policy_document) for p in policies]
 
 
 @pytest.fixture(autouse=True)
@@ -121,9 +180,12 @@ def ec2_mocks() -> Ec2Mocks:
 
 class TestNewSecurityGroupConfig:
     @_pulumi_test
-    def test_When_new_sg_config__Then_instance_has_correct_instance_type(self) -> pulumi.Output[None]:
+    def test_When_new_sg_config__Then_instance_has_correct_instance_type(self, faker: Faker) -> pulumi.Output[None]:
         instance_type = random.choice(_EC2_INSTANCE_TYPES)
-        component = _new_ec2_with_rdp(instance_type=instance_type)
+        component = _new_ec2_with_rdp(
+            instance_type=instance_type,
+            security_group_config=NewSecurityGroupConfig(central_networking_vpc_name=faker.slug()),
+        )
 
         def check(actual: str | None) -> None:
             assert actual == instance_type
@@ -138,7 +200,7 @@ class TestNewSecurityGroupConfig:
         component = _new_ec2_with_rdp(
             image_id=image_id,
             central_networking_subnet_name=faker.slug(),
-            instance_type=random.choice(_EC2_INSTANCE_TYPES),
+            security_group_config=NewSecurityGroupConfig(central_networking_vpc_name=faker.slug()),
         )
 
         def check(args: list[object]) -> None:
@@ -191,8 +253,12 @@ class TestNewSecurityGroupConfig:
         return component.instance.id.apply(check)
 
     @_pulumi_test
-    def test_When_new_sg_config__Then_egress_rule_always_created(self, ec2_mocks: Ec2Mocks) -> pulumi.Output[None]:
-        component = _new_ec2_with_rdp()
+    def test_When_new_sg_config__Then_egress_rule_always_created(
+        self, ec2_mocks: Ec2Mocks, faker: Faker
+    ) -> pulumi.Output[None]:
+        component = _new_ec2_with_rdp(
+            security_group_config=NewSecurityGroupConfig(central_networking_vpc_name=faker.slug())
+        )
 
         def check(_: str) -> None:
             egress = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroupEgress"]
@@ -310,13 +376,27 @@ def test_When_additional_instance_tags_provided__Then_tags_appear_on_instance(fa
 
 
 @_pulumi_test
+def test_When_enable_dcv_false__Then_instance_role_has_no_dcv_policy(ec2_mocks: Ec2Mocks) -> pulumi.Output[None]:
+    component = _new_ec2_with_rdp(enable_dcv=False)
+
+    def check(arns: Sequence[str] | None, policies: Sequence[RolePolicy] | None) -> None:
+        # sanity check that policy attachment worked at all, so the absence check below isn't vacuous
+        assert arns is not None
+        assert "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore" in arns
+        assert _expected_dcv_license_policy(ec2_mocks) not in _inline_policies(policies)
+
+    return component.instance_role.managed_policy_arns.apply(
+        lambda arns: component.instance_role.policies.apply(lambda policies: check(arns, policies))
+    )
+
+
+@_pulumi_test
 def test_When_component_created__Then_instance_role_has_ssm_managed_policy() -> pulumi.Output[None]:
     component = _new_ec2_with_rdp()
 
     def check(arns: Sequence[str] | None) -> None:
-        assert arns is not None, "Expected arns to be not None"
-        expected = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-        assert expected in arns, f"Expected SSM policy in {arns}"
+        assert arns is not None
+        assert "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore" in arns
 
     return component.instance_role.managed_policy_arns.apply(check)
 
@@ -349,21 +429,6 @@ def test_When_enable_dcv__Then_instance_role_has_dcv_license_policy(ec2_mocks: E
     component = _new_ec2_with_rdp(enable_dcv=True)
 
     def check(policies: Sequence[RolePolicy] | None) -> None:
-        assert policies is not None, "Expected policies to be not None"
-        expected = (
-            "DcvLicenseAccess",
-            {
-                "Version": "2012-10-17",
-                "Statement": [
-                    {
-                        "Effect": "Allow",
-                        "Action": "s3:GetObject",
-                        "Resource": f"arn:{ec2_mocks.partition}:s3:::dcv-license.{ec2_mocks.region}/*",
-                    }
-                ],
-            },
-        )
-        actual = [(p.policy_name, p.policy_document) for p in policies]
-        assert expected in actual
+        assert _expected_dcv_license_policy(ec2_mocks) in _inline_policies(policies)
 
     return component.instance_role.policies.apply(check)
