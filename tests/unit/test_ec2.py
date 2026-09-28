@@ -12,6 +12,7 @@ from faker import Faker
 from pulumi_aws.iam import GetPolicyDocumentStatementArgsDict
 from pulumi_aws_native import TagArgs
 from pulumi_aws_native import ec2
+from pulumi_aws_native.iam.outputs import RolePolicy
 from pulumi_aws_native.outputs import Tag
 from pydantic import TypeAdapter
 
@@ -23,6 +24,8 @@ from lab_auto_pulumi.ec2 import NewSecurityGroupConfig
 _pulumi_test = pulumi.runtime.test  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType] # pulumi.runtime.test is partially typed in the Pulumi SDK; alias avoids repeating the ignore on every test
 
 _EC2_INSTANCE_TYPES = ["t3.micro", "t3.large", "m5.xlarge", "c5.2xlarge"]
+_AWS_REGIONS = ["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-2"]
+_AWS_PARTITIONS = ["aws", "aws-cn", "aws-us-gov"]
 _POLICY_STATEMENTS_ADAPTER = TypeAdapter(list[GetPolicyDocumentStatementArgsDict])
 
 
@@ -31,6 +34,8 @@ class Ec2Mocks(pulumi.runtime.Mocks):
         super().__init__()
         self.created_resources: list[pulumi.runtime.MockResourceArgs] = []
         self.captured_calls: list[pulumi.runtime.MockCallArgs] = []
+        self.region = random.choice(_AWS_REGIONS)
+        self.partition = random.choice(_AWS_PARTITIONS)
 
     def new_resource(self, args: pulumi.runtime.MockResourceArgs) -> tuple[str, dict[str, Any]]:  # type: ignore[override] # pyright infers Optional[str] for id but str is always safe here
         self.created_resources.append(args)
@@ -54,6 +59,10 @@ class Ec2Mocks(pulumi.runtime.Mocks):
                     }
                 )
             }
+        if args.token == "aws-native:index:getRegion":  # noqa:S105 # definitely not a password
+            return {"region": self.region}
+        if args.token == "aws-native:index:getPartition":  # noqa:S105 # definitely not a password
+            return {"partition": self.partition}
         return {}
 
 
@@ -66,6 +75,7 @@ def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more rea
     security_group_config: NewSecurityGroupConfig | ExistingSecurityGroupConfig | None = None,
     user_data: pulumi.Output[str] | None = None,
     additional_instance_tags: list[TagArgs] | None = None,
+    enable_dcv: bool = False,
 ) -> Ec2WithRdp:
     _faker = Faker()
     if name is None:
@@ -94,6 +104,7 @@ def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more rea
             security_group_config=security_group_config,
             user_data=user_data,
             additional_instance_tags=additional_instance_tags,
+            enable_dcv=enable_dcv,
         )
 
 
@@ -331,3 +342,28 @@ def test_When_component_created__Then_instance_role_trust_policy_allows_ec2(
         assert principals[0]["identifiers"] == ["ec2.amazonaws.com"]
 
     return component.instance_role.assume_role_policy_document.apply(check)
+
+
+@_pulumi_test
+def test_When_enable_dcv__Then_instance_role_has_dcv_license_policy(ec2_mocks: Ec2Mocks) -> pulumi.Output[None]:
+    component = _new_ec2_with_rdp(enable_dcv=True)
+
+    def check(policies: Sequence[RolePolicy] | None) -> None:
+        assert policies is not None, "Expected policies to be not None"
+        expected = (
+            "DcvLicenseAccess",
+            {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Action": "s3:GetObject",
+                        "Resource": f"arn:{ec2_mocks.partition}:s3:::dcv-license.{ec2_mocks.region}/*",
+                    }
+                ],
+            },
+        )
+        actual = [(p.policy_name, p.policy_document) for p in policies]
+        assert expected in actual
+
+    return component.instance_role.policies.apply(check)

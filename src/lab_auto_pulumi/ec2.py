@@ -13,6 +13,8 @@ from pulumi_aws.iam import GetPolicyDocumentStatementPrincipalArgs
 from pulumi_aws.iam import get_policy_document
 from pulumi_aws_native import TagArgs
 from pulumi_aws_native import ec2
+from pulumi_aws_native import get_partition_output
+from pulumi_aws_native import get_region_output
 from pulumi_aws_native import iam
 from pydantic import BaseModel
 from pydantic import ConfigDict
@@ -56,6 +58,7 @@ class Ec2WithRdp(ComponentResource):
         persist_user_data: bool = False,  # if false, then user data changes will result in replacing the instance (because new user data won't take effect unless the instance is replaced). if true, then you can replace the user data, but it will force an immediate restart of the EC2...which may not actually show up in the Pulumi plan
         # TODO: maybe ensure that the persist flag in the user data XML has been set, or add it automatically if it hasn't (when persist_user_data set to true)
         # remember for Windows Instances, if you create an ingress rule, you also need to create a Firewall inbound rule on the EC2 instance itself in order for it to actually be accessible
+        enable_dcv: bool = False,
         parent: Resource | None = None,
     ):
         super().__init__("labauto:Ec2WithRdp", append_resource_suffix(name), None, opts=ResourceOptions(parent=parent))
@@ -66,6 +69,29 @@ class Ec2WithRdp(ComponentResource):
         if additional_instance_tags is None:
             additional_instance_tags = []
         resource_name = f"{name}-ec2"
+        inline_policies: list[iam.RolePolicyArgs] | None = None
+        if enable_dcv:
+            inline_policies = [
+                iam.RolePolicyArgs(
+                    policy_name="DcvLicenseAccess",
+                    policy_document={
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Action": "s3:GetObject",
+                                "Resource": Output.concat(
+                                    "arn:",
+                                    get_partition_output().partition,
+                                    ":s3:::dcv-license.",
+                                    get_region_output().region,
+                                    "/*",
+                                ),
+                            }
+                        ],
+                    },
+                )
+            ]
         self.instance_role = iam.Role(
             append_resource_suffix(resource_name),
             assume_role_policy_document=get_policy_document(
@@ -80,6 +106,7 @@ class Ec2WithRdp(ComponentResource):
                 ]
             ).json,
             managed_policy_arns=["arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"],
+            policies=inline_policies,
             tags=common_tags_native(),
             opts=ResourceOptions(parent=self),
         )
