@@ -89,7 +89,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str) -> Any:  # noqa: ANN401 # In this case it can in fact by anything so Any is appropriate
+def __getattr__(name: str) -> Any:  # noqa: ANN401 # pyrefly: ignore[explicit-any] # only exists for the deprecated ORG_MANAGED_SSM_PARAM_PREFIX shim, which will be removed soon
     if name == "ORG_MANAGED_SSM_PARAM_PREFIX":
         from .constants import (  # noqa:PLC0415 # Must be here so that we can verify the deprecation in a test otherwise it happens at init time and we miss it.
             ORG_MANAGED_SSM_PARAM_PREFIX,

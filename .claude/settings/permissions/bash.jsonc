@@ -1,3 +1,12 @@
+/*
+ * ============== WARNING ==============================================================================
+ * File is managed by copier template: gh:LabAutomationAndScreening/copier-base-template.git
+ * See .config/.copier-managed-files.json for details.
+ *
+ * You are welcome to make changes to this file in your repo if they are custom to your project,
+ * but if the change should be shared with other projects, please backport it to the template repo.
+ * =====================================================================================================
+ */
 {
   // Bash command permissions - allowed and denied shell operations
   // This should only ever be running in a devcontainer, so pretty lenient permissions are allowed
@@ -25,8 +34,10 @@
       "Bash(~/.claude/hooks/*)",
       "Bash(~/.agents/skills/*)",
       "Bash(~/.claude/skills/*)",
+      "Bash(.claude/skills/**/*)",
       // File System
       "Bash(bat *)",
+      "Bash(cd /workspaces/*)",
       "Bash(chmod *)",
       "Bash(cp *)",
       "Bash(eza *)",
@@ -39,26 +50,71 @@
       "Bash(tar *)",
       "Bash(touch *)",
       "Bash(tree *)",
-      // Git & Version Control
-      "Bash(git diff *)",
-      "Bash(git status *)",
-      "Bash(git log *)",
-      "Bash(git rev-parse *)",
-      "Bash(git branch *)",
+      // Git & Version Control - anything not explicitly denied
+      "Bash(git *)",
+      // Github
+      "Bash(gh issue list *)",
+      "Bash(gh issue view *)",
+      "Bash(gh run download *)",
+      "Bash(gh run list *)",
+      "Bash(gh run view *)",
+      "Bash(gh run watch *)",
+      "Bash(gh search *)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr diff *)",
+      // Local app interaction
+      // Claude currently has terrible support for this: https://github.com/anthropics/claude-code/issues/338    using `:*` as a pattern is not allowed (doesn't error, just doesn't really work), so have to specify _something_ between the colon and asterisk.
+      "Bash(curl http://localhost:1*)",
+      "Bash(curl http://localhost:2*)",
+      "Bash(curl http://localhost:3*)",
+      "Bash(curl http://localhost:4*)",
+      "Bash(curl http://localhost:5*)",
+      "Bash(curl http://localhost:6*)",
+      "Bash(curl http://localhost:7*)",
+      "Bash(curl http://localhost:8*)",
+      "Bash(curl http://localhost:9*)",
+      "Bash(curl -s http://localhost:1*)",
+      "Bash(curl -s http://localhost:2*)",
+      "Bash(curl -s http://localhost:3*)",
+      "Bash(curl -s http://localhost:4*)",
+      "Bash(curl -s http://localhost:5*)",
+      "Bash(curl -s http://localhost:6*)",
+      "Bash(curl -s http://localhost:7*)",
+      "Bash(curl -s http://localhost:8*)",
+      "Bash(curl -s http://localhost:9*)",
+      "Bash(curl \"http://localhost:1*)",
+      "Bash(curl \"http://localhost:2*)",
+      "Bash(curl \"http://localhost:3*)",
+      "Bash(curl \"http://localhost:4*)",
+      "Bash(curl \"http://localhost:5*)",
+      "Bash(curl \"http://localhost:6*)",
+      "Bash(curl \"http://localhost:7*)",
+      "Bash(curl \"http://localhost:8*)",
+      "Bash(curl \"http://localhost:9*)",
+      "Bash(curl -s \"http://localhost:1*)",
+      "Bash(curl -s \"http://localhost:2*)",
+      "Bash(curl -s \"http://localhost:3*)",
+      "Bash(curl -s \"http://localhost:4*)",
+      "Bash(curl -s \"http://localhost:5*)",
+      "Bash(curl -s \"http://localhost:6*)",
+      "Bash(curl -s \"http://localhost:7*)",
+      "Bash(curl -s \"http://localhost:8*)",
+      "Bash(curl -s \"http://localhost:9*)",
       // Misc
       "Bash(amp *)",
       "Bash(atuin *)",
       "Bash(bc *)",
-      "Bash(chezmoi *)",
       "Bash(diff *)",
       "Bash(jq *)",
-      "Bash(just *)",
       "Bash(lsof *)",
+      "Bash(task *)", // Task runner invocation is freely allowed.  Write access to the taskfiles themselves is protected by Ask.
       "Bash(test *)",
+      "Bash(xxd)", // this invocation can be used to read, but not to write (so no " *" after it)
       "Bash(zk *)",
       // Node.js
-      "Bash(pnpm test-unit *)",
-      "Bash(pnpm test-e2e *)",
+      "Bash(pnpm list *)",
+      "Bash(pnpm test*)",
+      "Bash(pnpm view *)",
       // Python
       "Bash(uv run pytest *)",
       // Text Processing
@@ -75,9 +131,6 @@
       // Search
       "Bash(rg *)",
       // Research
-      "Bash(gh issue list *)",
-      "Bash(gh pr view *)",
-      "Bash(gh pr diff *)"
     ],
     "ask": [
       // let's hold off before we let it use the github CLI in any free running allow mode...I don't want it somehow approving PRs with the user's credentials
@@ -86,8 +139,6 @@
       "Bash(gh secret *)",
       "Bash(gh ruleset *)",
       "Bash(aws *)", // let's hold off before we let it use AWS CLI in any free running allow mode. We need to be very sure we don't have any access to staging or production credentials in our dev environment (...which we shouldn't...but we need to double check that or consider any other safeguards first)
-      "Bash(curl *)",
-      "Bash(ln *)",
       "WebFetch",
     ],
     "deny": [
@@ -95,14 +146,25 @@
       "Bash(bd init*)", // we need to control the init process, don't let AI do that in the background
       // Github
       // Claude should not ever interfere with the PR process, that is how we gate AI's work
-      "Bash(gh pr create *)",
-      "Bash(gh pr edit *)",
-      "Bash(gh pr ready *)",
-      "Bash(gh pr review *)",
-      "Bash(gh pr merge *)",
       "Bash(gh pr close *)",
       "Bash(gh pr comment *)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr edit *)",
+      "Bash(gh pr merge *)",
+      "Bash(gh pr ready *)",
+      "Bash(gh pr review *)",
       "Bash(gh pr update-branch *)",
+      // Task must run the repo's own taskfiles, which are the reviewed ones. These flags are the only ways to point it elsewhere (there is no environment variable equivalent -- https://github.com/go-task/task/issues/1721 was closed as a duplicate with nothing implemented), and `/tmp` is writable without a prompt, so without these denials `Bash(task *)` would be an allow-anything entry.
+      "Bash(task -t *)",
+      "Bash(task --taskfile *)",
+      "Bash(task --taskfile=*)",
+      "Bash(task --entrypoint *)",
+      "Bash(task --entrypoint=*)",
+      "Bash(task -d *)",
+      "Bash(task --dir *)",
+      "Bash(task --dir=*)",
+      "Bash(task -g *)",
+      "Bash(task --global *)",
 
       // Destructive File Operations
       "Bash(chmod -R *)",
@@ -118,9 +180,9 @@
       "Bash(kill -9 *)",
       "Bash(killall *)",
       // Git & Version Control
-      "Bash(git reset --hard *)",
       "Bash(git push -f *)",
       "Bash(git push --force*)",
+      "Bash(git push --tags*)",
       // Node.js
       "Bash(npm publish *)",
       // System Administration

@@ -27,7 +27,7 @@ TAG_VALUE_FOR_WRITE_ACCESS = "Write"
 TAG_VALUE_FOR_DELETE_ACCESS = "Delete"
 
 
-def __getattr__(name: str) -> Any:  # noqa: ANN401 # In this case it can in fact by anything so Any is appropriate
+def __getattr__(name: str) -> Any:  # noqa: ANN401 # pyrefly: ignore[explicit-any] # only exists for the deprecated ORG_MANAGED_SSM_PARAM_PREFIX shim, which will be removed soon
     # https://peps.python.org/pep-0562/
     if name == "ORG_MANAGED_SSM_PARAM_PREFIX":
         warnings.warn(

@@ -1,5 +1,4 @@
 from functools import cached_property
-from typing import Any
 from typing import override
 
 from pulumi_aws import identitystore as identitystore_classic
@@ -60,7 +59,7 @@ class User(BaseModel):  # NOT RECOMMENDED TO USE THIS IF YOU HAVE AN EXTERNAL ID
     _user: identitystore_classic.User | None = None
 
     @override
-    def model_post_init(self, _: Any) -> None:
+    def model_post_init(self, _: object) -> None:
         all_created_users[self.username] = UserInfo(username=self.username, attributes=self.user_attributes)
         self._user = identitystore_classic.User(
             f"{self.first_name}-{self.last_name}"

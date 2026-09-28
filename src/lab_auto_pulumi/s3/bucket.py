@@ -49,7 +49,7 @@ class ManualArtifactsBucket(ComponentResource):
         _ = s3.BucketPolicy(
             append_resource_suffix("manual-artifacts"),
             opts=ResourceOptions(parent=self, delete_before_replace=True),
-            bucket=self.bucket.bucket_name,  # type: ignore[reportArgumentType] # pyright somehow thinks a bucket name can be Output[None], which doesn't seem possible
+            bucket=self.bucket.bucket_name,
             policy_document=self.bucket.bucket_name.apply(
                 lambda bucket_name: (
                     get_policy_document(
