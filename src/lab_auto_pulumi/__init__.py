@@ -1,5 +1,3 @@
-from typing import Any
-
 from . import constants
 from .constants import CENTRAL_NETWORKING_SSM_PREFIX
 from .constants import GENERIC_CENTRAL_PRIVATE_SUBNET_NAME
@@ -87,13 +85,3 @@ __all__ = [
     "get_ssm_param_value",
     "principal_in_org_condition",
 ]
-
-
-def __getattr__(name: str) -> Any:  # noqa: ANN401 # pyrefly: ignore[explicit-any] # only exists for the deprecated ORG_MANAGED_SSM_PARAM_PREFIX shim, which will be removed soon
-    if name == "ORG_MANAGED_SSM_PARAM_PREFIX":
-        from .constants import (  # noqa:PLC0415 # Must be here so that we can verify the deprecation in a test otherwise it happens at init time and we miss it.
-            ORG_MANAGED_SSM_PARAM_PREFIX,
-        )
-
-        return ORG_MANAGED_SSM_PARAM_PREFIX
-    raise AttributeError(f"module {__name__} has no attribute {name}")  # noqa:TRY003 # this is infact an attribute error. Its fine
