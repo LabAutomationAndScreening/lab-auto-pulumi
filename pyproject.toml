@@ -26,12 +26,12 @@ classifiers = [
 
 ]
 dependencies = [
-    "pulumi>=3.264.0",
+    "pulumi>=3.265.0",
     "pulumi-aws>=7.48.0",
-    "pulumi-aws-native>=1.80.0",
-    "ephemeral-pulumi-deploy>=0.0.7",
-    "boto3>=1.43.101",
-    "boto3-stubs[ssm]>=1.43.101",
+    "pulumi-aws-native>=1.81.0",
+    "ephemeral-pulumi-deploy>=0.0.8",
+    "boto3>=1.43.104",
+    "boto3-stubs[ssm]>=1.43.104",
     "pydantic>=2.13.5",
 ]
 
