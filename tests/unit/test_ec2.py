@@ -39,8 +39,9 @@ class _Unset(Enum):
 
 
 class Ec2Mocks(pulumi.runtime.Mocks):
-    def __init__(self) -> None:
+    def __init__(self, *, faker: Faker) -> None:
         super().__init__()
+        self.faker = faker
         self.created_resources: list[pulumi.runtime.MockResourceArgs] = []
         self.captured_calls: list[pulumi.runtime.MockCallArgs] = []
         self.region = random.choice(_AWS_REGIONS)
@@ -66,7 +67,7 @@ class Ec2Mocks(pulumi.runtime.Mocks):
                             {
                                 "Effect": "Allow",
                                 "Action": "sts:AssumeRole",
-                                "Principal": {"Service": Faker().slug() + ".amazonaws.com"},
+                                "Principal": {"Service": self.faker.slug() + ".amazonaws.com"},
                             }
                         ],
                     }
@@ -81,6 +82,7 @@ class Ec2Mocks(pulumi.runtime.Mocks):
 
 def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more readable to specify them as arguments in the tests than pack them into a config object, they are keyword args anyways with a bunch of default values
     *,
+    faker: Faker,
     name: str | _Unset = _Unset.TOKEN,
     central_networking_subnet_name: str | _Unset = _Unset.TOKEN,
     instance_type: str | _Unset = _Unset.TOKEN,
@@ -92,7 +94,6 @@ def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more rea
     enable_dcv: bool | _Unset = _Unset.TOKEN,
     parent: pulumi.Resource | _Unset | None = _Unset.TOKEN,
 ) -> Ec2WithRdp:
-    faker = Faker()
     with (
         mock.patch.object(lab_auto_ec2_module, lab_auto_ec2_module.common_tags_native.__name__, return_value=[]),
         mock.patch.object(
@@ -189,8 +190,8 @@ def _policy_document_statements_with_actions(
 
 
 @pytest.fixture(autouse=True)
-def ec2_mocks() -> Ec2Mocks:
-    mocks = Ec2Mocks()
+def ec2_mocks(faker: Faker) -> Ec2Mocks:
+    mocks = Ec2Mocks(faker=faker)
     pulumi.runtime.set_mocks(mocks, project="test-project", stack="test-stack")
     return mocks
 
@@ -200,6 +201,7 @@ class TestNewSecurityGroupConfig:
     def test_When_new_sg_config__Then_instance_has_correct_instance_type(self, faker: Faker) -> pulumi.Output[None]:
         instance_type = random.choice(_EC2_INSTANCE_TYPES)
         component = _new_ec2_with_rdp(
+            faker=faker,
             instance_type=instance_type,
             security_group_config=NewSecurityGroupConfig(central_networking_vpc_name=faker.slug()),
         )
@@ -215,6 +217,7 @@ class TestNewSecurityGroupConfig:
     ) -> pulumi.Output[None]:
         image_id = f"ami-{faker.hexify('^^^^^^^^')}"
         component = _new_ec2_with_rdp(
+            faker=faker,
             image_id=image_id,
             central_networking_subnet_name=faker.slug(),
             security_group_config=NewSecurityGroupConfig(central_networking_vpc_name=faker.slug()),
@@ -235,7 +238,7 @@ class TestNewSecurityGroupConfig:
         self, faker: Faker
     ) -> pulumi.Output[None]:
         component = _new_ec2_with_rdp(
-            security_group_config=NewSecurityGroupConfig(central_networking_vpc_name=faker.slug())
+            faker=faker, security_group_config=NewSecurityGroupConfig(central_networking_vpc_name=faker.slug())
         )
 
         def check(vpc_id: str | None) -> None:
@@ -251,6 +254,7 @@ class TestNewSecurityGroupConfig:
 
         _run_pulumi_program(
             lambda: _new_ec2_with_rdp(
+                faker=faker,
                 security_group_config=NewSecurityGroupConfig(
                     central_networking_vpc_name=faker.slug(),
                     ingress_rules=[
@@ -261,7 +265,7 @@ class TestNewSecurityGroupConfig:
                             to_port=port,
                         )
                     ],
-                )
+                ),
             )
         )
 
@@ -274,7 +278,7 @@ class TestNewSecurityGroupConfig:
     def test_When_new_sg_config__Then_egress_rule_always_created(self, ec2_mocks: Ec2Mocks, faker: Faker) -> None:
         _run_pulumi_program(
             lambda: _new_ec2_with_rdp(
-                security_group_config=NewSecurityGroupConfig(central_networking_vpc_name=faker.slug())
+                faker=faker, security_group_config=NewSecurityGroupConfig(central_networking_vpc_name=faker.slug())
             )
         )
 
@@ -288,6 +292,7 @@ class TestNewSecurityGroupConfig:
     def test_When_ingress_rule_has_no_description__Then_raises_value_error(self, faker: Faker) -> None:
         with pytest.raises(ValueError, match="must have a description"):
             _ = _new_ec2_with_rdp(
+                faker=faker,
                 security_group_config=NewSecurityGroupConfig(
                     central_networking_vpc_name=faker.slug(),
                     ingress_rules=[
@@ -298,7 +303,7 @@ class TestNewSecurityGroupConfig:
                             to_port=3389,
                         )
                     ],
-                )
+                ),
             )
 
 
@@ -309,7 +314,8 @@ class TestExistingSecurityGroup:
     ) -> pulumi.Output[None]:
         sg_id = f"sg-{faker.hexify('^^^^^^^^')}"
         component = _new_ec2_with_rdp(
-            security_group_config=ExistingSecurityGroupConfig(security_group_id=pulumi.Output.from_input(sg_id))
+            faker=faker,
+            security_group_config=ExistingSecurityGroupConfig(security_group_id=pulumi.Output.from_input(sg_id)),
         )
 
         def check(_: str) -> None:
@@ -334,7 +340,8 @@ class TestExistingSecurityGroup:
     def test_When_existing_sg_config__Then_instance_uses_provided_sg_id(self, faker: Faker) -> pulumi.Output[None]:
         sg_id = f"sg-{faker.hexify('^^^^^^^^')}"
         component = _new_ec2_with_rdp(
-            security_group_config=ExistingSecurityGroupConfig(security_group_id=pulumi.Output.from_input(sg_id))
+            faker=faker,
+            security_group_config=ExistingSecurityGroupConfig(security_group_id=pulumi.Output.from_input(sg_id)),
         )
 
         def check(sg_ids: Sequence[object] | None) -> None:
@@ -351,7 +358,7 @@ class TestUserData:
     ) -> pulumi.Output[None]:
 
         raw_user_data_script = faker.sentence()
-        component = _new_ec2_with_rdp(user_data=pulumi.Output.from_input(raw_user_data_script))
+        component = _new_ec2_with_rdp(faker=faker, user_data=pulumi.Output.from_input(raw_user_data_script))
 
         def check(encoded: str | None) -> None:
             expected = base64.b64encode(raw_user_data_script.encode()).decode()
@@ -360,8 +367,8 @@ class TestUserData:
         return component.instance.user_data.apply(check)
 
     @_pulumi_test
-    def test_When_no_user_data__Then_instance_user_data_is_none(self) -> pulumi.Output[None]:
-        component = _new_ec2_with_rdp(user_data=None)
+    def test_When_no_user_data__Then_instance_user_data_is_none(self, faker: Faker) -> pulumi.Output[None]:
+        component = _new_ec2_with_rdp(faker=faker, user_data=None)
 
         def check(user_data: str | None) -> None:
             assert user_data is None, f"Expected None but got {user_data!r}"
@@ -376,10 +383,11 @@ def test_When_additional_instance_tags_provided__Then_tags_appear_on_instance(fa
     key_two = faker.unique.word()
     value_two = faker.word()
     component = _new_ec2_with_rdp(
+        faker=faker,
         additional_instance_tags=[
             TagArgs(key=key_one, value=value_one),
             TagArgs(key=key_two, value=value_two),
-        ]
+        ],
     )
 
     def check(tags: Sequence[Tag] | None) -> None:
@@ -393,9 +401,11 @@ def test_When_additional_instance_tags_provided__Then_tags_appear_on_instance(fa
 
 @_pulumi_test
 def test_When_component_created__Then_instance_role_has_ssm_managed_policy_in_resolved_partition(
-    ec2_mocks: Ec2Mocks,
+    ec2_mocks: Ec2Mocks, faker: Faker
 ) -> pulumi.Output[None]:
-    component = _new_ec2_with_rdp()
+    component = _new_ec2_with_rdp(
+        faker=faker,
+    )
 
     def check(arns: Sequence[str] | None) -> None:
         assert arns == [_expected_ssm_managed_instance_core_arn(ec2_mocks)]
@@ -405,9 +415,11 @@ def test_When_component_created__Then_instance_role_has_ssm_managed_policy_in_re
 
 @_pulumi_test
 def test_When_component_created__Then_instance_role_trust_policy_allows_ec2(
-    ec2_mocks: Ec2Mocks,
+    ec2_mocks: Ec2Mocks, faker: Faker
 ) -> pulumi.Output[None]:
-    component = _new_ec2_with_rdp()
+    component = _new_ec2_with_rdp(
+        faker=faker,
+    )
 
     def check(_: str) -> None:
         trust_statements = _policy_document_statements_with_actions(ec2_mocks, actions=["sts:AssumeRole"])
@@ -425,9 +437,9 @@ def test_When_component_created__Then_instance_role_trust_policy_allows_ec2(
 
 
 def test_When_enable_dcv_true__Then_dcv_license_policy_attached_to_instance_role_as_separate_role_policy(
-    ec2_mocks: Ec2Mocks,
+    ec2_mocks: Ec2Mocks, faker: Faker
 ) -> None:
-    _run_pulumi_program(lambda: _new_ec2_with_rdp(enable_dcv=True))
+    _run_pulumi_program(lambda: _new_ec2_with_rdp(faker=faker, enable_dcv=True))
 
     roles = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:iam:Role"]
     role_policies = [r for r in ec2_mocks.created_resources if r.typ == "aws:iam/rolePolicy:RolePolicy"]
@@ -446,8 +458,8 @@ def test_When_enable_dcv_true__Then_dcv_license_policy_attached_to_instance_role
     ]
 
 
-def test_When_enable_dcv_false__Then_instance_role_has_no_dcv_policy(ec2_mocks: Ec2Mocks) -> None:
-    _run_pulumi_program(lambda: _new_ec2_with_rdp(enable_dcv=False))
+def test_When_enable_dcv_false__Then_instance_role_has_no_dcv_policy(ec2_mocks: Ec2Mocks, faker: Faker) -> None:
+    _run_pulumi_program(lambda: _new_ec2_with_rdp(faker=faker, enable_dcv=False))
 
     roles = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:iam:Role"]
     role_policies = [r for r in ec2_mocks.created_resources if r.typ == "aws:iam/rolePolicy:RolePolicy"]
@@ -469,7 +481,7 @@ def test_Given_parent_with_aws_native_provider__When_enable_dcv_true__Then_parti
         parent = pulumi.ComponentResource(
             "test:index:Parent", faker.slug(), opts=pulumi.ResourceOptions(providers=[provider])
         )
-        _ = _new_ec2_with_rdp(enable_dcv=True, parent=parent)
+        _ = _new_ec2_with_rdp(faker=faker, enable_dcv=True, parent=parent)
         return pulumi.Output.concat(provider.urn, "::", provider.id).apply(expected_provider_refs.append)
 
     _run_pulumi_program(create_component)
