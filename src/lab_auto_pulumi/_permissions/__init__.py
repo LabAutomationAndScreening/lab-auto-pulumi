@@ -8,6 +8,8 @@ from .lib import Username
 from .lib import all_created_users
 from .permissions import AwsSsoPermissionSet
 from .permissions import AwsSsoPermissionSetAccountAssignments
+from .permissions import UserNotFoundInIdentityStoreError
+from .permissions import lookup_user_id
 from .permissions import principal_in_org_condition
 
 __all__ = [
@@ -19,7 +21,9 @@ __all__ = [
     "User",
     "UserAttributes",
     "UserInfo",
+    "UserNotFoundInIdentityStoreError",
     "Username",
     "all_created_users",
+    "lookup_user_id",
     "principal_in_org_condition",
 ]

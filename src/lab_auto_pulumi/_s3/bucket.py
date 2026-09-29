@@ -9,7 +9,7 @@ from pulumi_aws.organizations import get_organization
 from pulumi_aws_native import TagArgs
 from pulumi_aws_native import s3
 
-from ..permissions import principal_in_org_condition
+from .._permissions import principal_in_org_condition
 
 
 def create_worm_bucket(

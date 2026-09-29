@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from pydantic import Field
 
-from .permissions import AwsAccountInfo
+from ._permissions import AwsAccountInfo
 
 
 class AwsLogicalWorkload(BaseModel):

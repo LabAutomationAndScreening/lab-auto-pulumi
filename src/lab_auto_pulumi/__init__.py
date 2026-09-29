@@ -1,6 +1,20 @@
-from typing import Any
-
 from . import constants
+from ._organization import OrganizationInfo
+from ._permissions import ORG_INFO
+from ._permissions import AwsAccountInfo
+from ._permissions import AwsSsoPermissionSet
+from ._permissions import AwsSsoPermissionSetAccountAssignments
+from ._permissions import OrgInfo
+from ._permissions import User
+from ._permissions import UserAttributes
+from ._permissions import UserInfo
+from ._permissions import Username
+from ._permissions import UserNotFoundInIdentityStoreError
+from ._permissions import all_created_users
+from ._permissions import lookup_user_id
+from ._permissions import principal_in_org_condition
+from ._s3 import ManualArtifactsBucket
+from ._s3 import create_worm_bucket
 from .constants import CENTRAL_NETWORKING_SSM_PREFIX
 from .constants import GENERIC_CENTRAL_PRIVATE_SUBNET_NAME
 from .constants import GENERIC_CENTRAL_PUBLIC_SUBNET_NAME
@@ -27,20 +41,6 @@ from .lib import create_resource_name_safe_str
 from .lib import get_manual_artifacts_bucket_name
 from .lib import get_org_managed_ssm_param_value
 from .lib import get_ssm_param_value
-from .organization import OrganizationInfo
-from .permissions import ORG_INFO
-from .permissions import AwsAccountInfo
-from .permissions import AwsSsoPermissionSet
-from .permissions import AwsSsoPermissionSetAccountAssignments
-from .permissions import OrgInfo
-from .permissions import User
-from .permissions import UserAttributes
-from .permissions import UserInfo
-from .permissions import Username
-from .permissions import all_created_users
-from .permissions import principal_in_org_condition
-from .s3 import ManualArtifactsBucket
-from .s3 import create_worm_bucket
 from .workload import AwsLogicalWorkload
 
 __all__ = [
@@ -76,6 +76,7 @@ __all__ = [
     "User",
     "UserAttributes",
     "UserInfo",
+    "UserNotFoundInIdentityStoreError",
     "Username",
     "WorkloadName",
     "all_created_users",
@@ -85,15 +86,6 @@ __all__ = [
     "get_manual_artifacts_bucket_name",
     "get_org_managed_ssm_param_value",
     "get_ssm_param_value",
+    "lookup_user_id",
     "principal_in_org_condition",
 ]
-
-
-def __getattr__(name: str) -> Any:  # noqa: ANN401 # pyrefly: ignore[explicit-any] # only exists for the deprecated ORG_MANAGED_SSM_PARAM_PREFIX shim, which will be removed soon
-    if name == "ORG_MANAGED_SSM_PARAM_PREFIX":
-        from .constants import (  # noqa:PLC0415 # Must be here so that we can verify the deprecation in a test otherwise it happens at init time and we miss it.
-            ORG_MANAGED_SSM_PARAM_PREFIX,
-        )
-
-        return ORG_MANAGED_SSM_PARAM_PREFIX
-    raise AttributeError(f"module {__name__} has no attribute {name}")  # noqa:TRY003 # this is infact an attribute error. Its fine
