@@ -1,7 +1,10 @@
 import base64
 import json
 import random
+from collections.abc import Callable
 from collections.abc import Sequence
+from enum import Enum
+from enum import auto
 from typing import Any
 from unittest import mock
 
@@ -26,9 +29,14 @@ _EC2_INSTANCE_TYPES = ["t3.micro", "t3.large", "m5.xlarge", "c5.2xlarge"]
 _POLICY_STATEMENTS_ADAPTER = TypeAdapter(list[GetPolicyDocumentStatementArgsDict])
 
 
+class _Unset(Enum):
+    TOKEN = auto()
+
+
 class Ec2Mocks(pulumi.runtime.Mocks):
-    def __init__(self) -> None:
+    def __init__(self, *, faker: Faker) -> None:
         super().__init__()
+        self.faker = faker
         self.created_resources: list[pulumi.runtime.MockResourceArgs] = []
         self.captured_calls: list[pulumi.runtime.MockCallArgs] = []
 
@@ -48,7 +56,7 @@ class Ec2Mocks(pulumi.runtime.Mocks):
                             {
                                 "Effect": "Allow",
                                 "Action": "sts:AssumeRole",
-                                "Principal": {"Service": Faker().slug() + ".amazonaws.com"},
+                                "Principal": {"Service": self.faker.slug() + ".amazonaws.com"},
                             }
                         ],
                     }
@@ -59,25 +67,17 @@ class Ec2Mocks(pulumi.runtime.Mocks):
 
 def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more readable to specify them as arguments in the tests than pack them into a config object, they are keyword args anyways with a bunch of default values
     *,
-    name: str | None = None,
-    central_networking_subnet_name: str | None = None,
-    instance_type: str | None = None,
-    image_id: str | None = None,
-    security_group_config: NewSecurityGroupConfig | ExistingSecurityGroupConfig | None = None,
-    user_data: pulumi.Output[str] | None = None,
-    additional_instance_tags: list[TagArgs] | None = None,
+    faker: Faker,
+    name: str | _Unset = _Unset.TOKEN,
+    central_networking_subnet_name: str | _Unset = _Unset.TOKEN,
+    instance_type: str | _Unset = _Unset.TOKEN,
+    image_id: str | _Unset = _Unset.TOKEN,
+    security_group_config: NewSecurityGroupConfig | ExistingSecurityGroupConfig | _Unset = _Unset.TOKEN,
+    user_data: pulumi.Output[str] | _Unset | None = _Unset.TOKEN,
+    additional_instance_tags: list[TagArgs] | _Unset | None = _Unset.TOKEN,
+    instance_ignore_changes: list[str] | _Unset | None = _Unset.TOKEN,
+    parent: pulumi.Resource | _Unset | None = _Unset.TOKEN,
 ) -> Ec2WithRdp:
-    _faker = Faker()
-    if name is None:
-        name = _faker.slug()
-    if central_networking_subnet_name is None:
-        central_networking_subnet_name = _faker.slug()
-    if instance_type is None:
-        instance_type = random.choice(_EC2_INSTANCE_TYPES)
-    if image_id is None:
-        image_id = f"ami-{_faker.hexify('????????')}"
-    if security_group_config is None:
-        security_group_config = NewSecurityGroupConfig(central_networking_vpc_name=_faker.slug())
     with (
         mock.patch.object(lab_auto_ec2_module, lab_auto_ec2_module.common_tags_native.__name__, return_value=[]),
         mock.patch.object(
@@ -87,14 +87,64 @@ def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more rea
         ),
     ):
         return Ec2WithRdp(
-            name=name,
-            central_networking_subnet_name=central_networking_subnet_name,
-            instance_type=instance_type,
-            image_id=image_id,
-            security_group_config=security_group_config,
-            user_data=user_data,
-            additional_instance_tags=additional_instance_tags,
+            name=_or_random(name, factory=faker.slug),
+            central_networking_subnet_name=_or_random(central_networking_subnet_name, factory=faker.slug),
+            instance_type=_or_random(instance_type, factory=lambda: random.choice(_EC2_INSTANCE_TYPES)),
+            image_id=_or_random(image_id, factory=lambda: f"ami-{faker.hexify('^^^^^^^^')}"),
+            security_group_config=_or_random(
+                security_group_config, factory=lambda: _random_security_group_config(faker)
+            ),
+            user_data=_or_random(
+                user_data, factory=lambda: random.choice([None, pulumi.Output.from_input(faker.sentence())])
+            ),
+            additional_instance_tags=_or_random(additional_instance_tags, factory=lambda: _random_tags(faker)),
+            instance_ignore_changes=_or_random(
+                instance_ignore_changes,
+                factory=lambda: random.choice(
+                    [None, random.sample(["imageId", "tags", "userData"], k=random.randint(0, 2))]
+                ),
+            ),
+            parent=_or_random(parent, factory=lambda: _random_parent(faker)),
         )
+
+
+def _or_random[T](value: T | _Unset, *, factory: Callable[[], T]) -> T:
+    if isinstance(value, _Unset):
+        return factory()
+    return value
+
+
+def _random_tags(faker: Faker) -> list[TagArgs] | None:
+    return random.choice(
+        [None, [TagArgs(key=faker.unique.word(), value=faker.word()) for _ in range(random.randint(0, 3))]]
+    )
+
+
+def _random_parent(faker: Faker) -> pulumi.Resource | None:
+    if random.choice([True, False]):
+        return pulumi.ComponentResource("test:index:Parent", faker.slug())
+    return None
+
+
+def _random_security_group_config(faker: Faker) -> NewSecurityGroupConfig | ExistingSecurityGroupConfig:
+    ingress_port = random.randint(1, 65535)
+    return random.choice(
+        [
+            NewSecurityGroupConfig(central_networking_vpc_name=faker.slug()),
+            NewSecurityGroupConfig(
+                central_networking_vpc_name=faker.slug(),
+                ingress_rules=[
+                    ec2.SecurityGroupIngressArgs(
+                        description=faker.sentence(),
+                        ip_protocol=random.choice(["tcp", "udp"]),
+                        from_port=ingress_port,
+                        to_port=ingress_port,
+                    )
+                ],
+            ),
+            ExistingSecurityGroupConfig(security_group_id=pulumi.Output.from_input(f"sg-{faker.hexify('^^^^^^^^')}")),
+        ]
+    )
 
 
 def _ssm_side_effect(param: str) -> str:
@@ -102,17 +152,21 @@ def _ssm_side_effect(param: str) -> str:
 
 
 @pytest.fixture(autouse=True)
-def ec2_mocks() -> Ec2Mocks:
-    mocks = Ec2Mocks()
+def ec2_mocks(faker: Faker) -> Ec2Mocks:
+    mocks = Ec2Mocks(faker=faker)
     pulumi.runtime.set_mocks(mocks, project="test-project", stack="test-stack")
     return mocks
 
 
 class TestNewSecurityGroupConfig:
     @_pulumi_test
-    def test_When_new_sg_config__Then_instance_has_correct_instance_type(self) -> pulumi.Output[None]:
+    def test_When_new_sg_config__Then_instance_has_correct_instance_type(self, faker: Faker) -> pulumi.Output[None]:
         instance_type = random.choice(_EC2_INSTANCE_TYPES)
-        component = _new_ec2_with_rdp(instance_type=instance_type)
+        component = _new_ec2_with_rdp(
+            faker=faker,
+            instance_type=instance_type,
+            security_group_config=NewSecurityGroupConfig(central_networking_vpc_name=faker.slug()),
+        )
 
         def check(actual: str | None) -> None:
             assert actual == instance_type
@@ -123,11 +177,12 @@ class TestNewSecurityGroupConfig:
     def test_When_new_sg_config__Then_instance_has_correct_image_id_and_subnet(
         self, faker: Faker
     ) -> pulumi.Output[None]:
-        image_id = f"ami-{faker.hexify('????????')}"
+        image_id = f"ami-{faker.hexify('^^^^^^^^')}"
         component = _new_ec2_with_rdp(
+            faker=faker,
             image_id=image_id,
             central_networking_subnet_name=faker.slug(),
-            instance_type=random.choice(_EC2_INSTANCE_TYPES),
+            security_group_config=NewSecurityGroupConfig(central_networking_vpc_name=faker.slug()),
         )
 
         def check(args: list[object]) -> None:
@@ -145,7 +200,7 @@ class TestNewSecurityGroupConfig:
         self, faker: Faker
     ) -> pulumi.Output[None]:
         component = _new_ec2_with_rdp(
-            security_group_config=NewSecurityGroupConfig(central_networking_vpc_name=faker.slug())
+            faker=faker, security_group_config=NewSecurityGroupConfig(central_networking_vpc_name=faker.slug())
         )
 
         def check(vpc_id: str | None) -> None:
@@ -158,6 +213,7 @@ class TestNewSecurityGroupConfig:
         self, ec2_mocks: Ec2Mocks, faker: Faker
     ) -> pulumi.Output[None]:
         component = _new_ec2_with_rdp(
+            faker=faker,
             security_group_config=NewSecurityGroupConfig(
                 central_networking_vpc_name=faker.slug(),
                 ingress_rules=[
@@ -168,7 +224,7 @@ class TestNewSecurityGroupConfig:
                         to_port=3389,
                     )
                 ],
-            )
+            ),
         )
 
         def check(_: str) -> None:
@@ -180,8 +236,12 @@ class TestNewSecurityGroupConfig:
         return component.instance.id.apply(check)
 
     @_pulumi_test
-    def test_When_new_sg_config__Then_egress_rule_always_created(self, ec2_mocks: Ec2Mocks) -> pulumi.Output[None]:
-        component = _new_ec2_with_rdp()
+    def test_When_new_sg_config__Then_egress_rule_always_created(
+        self, ec2_mocks: Ec2Mocks, faker: Faker
+    ) -> pulumi.Output[None]:
+        component = _new_ec2_with_rdp(
+            faker=faker, security_group_config=NewSecurityGroupConfig(central_networking_vpc_name=faker.slug())
+        )
 
         def check(_: str) -> None:
             egress = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroupEgress"]
@@ -195,6 +255,7 @@ class TestNewSecurityGroupConfig:
     def test_When_ingress_rule_has_no_description__Then_raises_value_error(self, faker: Faker) -> None:
         with pytest.raises(ValueError, match="must have a description"):
             _ = _new_ec2_with_rdp(
+                faker=faker,
                 security_group_config=NewSecurityGroupConfig(
                     central_networking_vpc_name=faker.slug(),
                     ingress_rules=[
@@ -205,7 +266,7 @@ class TestNewSecurityGroupConfig:
                             to_port=3389,
                         )
                     ],
-                )
+                ),
             )
 
 
@@ -214,9 +275,10 @@ class TestExistingSecurityGroup:
     def test_When_existing_sg_config__Then_no_new_security_group_resource_created(
         self, faker: Faker, ec2_mocks: Ec2Mocks
     ) -> pulumi.Output[None]:
-        sg_id = f"sg-{faker.hexify('????????')}"
+        sg_id = f"sg-{faker.hexify('^^^^^^^^')}"
         component = _new_ec2_with_rdp(
-            security_group_config=ExistingSecurityGroupConfig(security_group_id=pulumi.Output.from_input(sg_id))
+            faker=faker,
+            security_group_config=ExistingSecurityGroupConfig(security_group_id=pulumi.Output.from_input(sg_id)),
         )
 
         def check(_: str) -> None:
@@ -239,9 +301,10 @@ class TestExistingSecurityGroup:
 
     @_pulumi_test
     def test_When_existing_sg_config__Then_instance_uses_provided_sg_id(self, faker: Faker) -> pulumi.Output[None]:
-        sg_id = f"sg-{faker.hexify('????????')}"
+        sg_id = f"sg-{faker.hexify('^^^^^^^^')}"
         component = _new_ec2_with_rdp(
-            security_group_config=ExistingSecurityGroupConfig(security_group_id=pulumi.Output.from_input(sg_id))
+            faker=faker,
+            security_group_config=ExistingSecurityGroupConfig(security_group_id=pulumi.Output.from_input(sg_id)),
         )
 
         def check(sg_ids: Sequence[object] | None) -> None:
@@ -258,7 +321,7 @@ class TestUserData:
     ) -> pulumi.Output[None]:
 
         raw_user_data_script = faker.sentence()
-        component = _new_ec2_with_rdp(user_data=pulumi.Output.from_input(raw_user_data_script))
+        component = _new_ec2_with_rdp(faker=faker, user_data=pulumi.Output.from_input(raw_user_data_script))
 
         def check(encoded: str | None) -> None:
             expected = base64.b64encode(raw_user_data_script.encode()).decode()
@@ -267,8 +330,8 @@ class TestUserData:
         return component.instance.user_data.apply(check)
 
     @_pulumi_test
-    def test_When_no_user_data__Then_instance_user_data_is_none(self) -> pulumi.Output[None]:
-        component = _new_ec2_with_rdp(user_data=None)
+    def test_When_no_user_data__Then_instance_user_data_is_none(self, faker: Faker) -> pulumi.Output[None]:
+        component = _new_ec2_with_rdp(faker=faker, user_data=None)
 
         def check(user_data: str | None) -> None:
             assert user_data is None, f"Expected None but got {user_data!r}"
@@ -278,15 +341,16 @@ class TestUserData:
 
 @_pulumi_test
 def test_When_additional_instance_tags_provided__Then_tags_appear_on_instance(faker: Faker) -> pulumi.Output[None]:
-    key_one = faker.word()
+    key_one = faker.unique.word()
     value_one = faker.word()
-    key_two = faker.word()
+    key_two = faker.unique.word()
     value_two = faker.word()
     component = _new_ec2_with_rdp(
+        faker=faker,
         additional_instance_tags=[
             TagArgs(key=key_one, value=value_one),
             TagArgs(key=key_two, value=value_two),
-        ]
+        ],
     )
 
     def check(tags: Sequence[Tag] | None) -> None:
@@ -299,8 +363,8 @@ def test_When_additional_instance_tags_provided__Then_tags_appear_on_instance(fa
 
 
 @_pulumi_test
-def test_When_component_created__Then_instance_role_has_ssm_managed_policy() -> pulumi.Output[None]:
-    component = _new_ec2_with_rdp()
+def test_When_component_created__Then_instance_role_has_ssm_managed_policy(faker: Faker) -> pulumi.Output[None]:
+    component = _new_ec2_with_rdp(faker=faker)
 
     def check(arns: Sequence[str] | None) -> None:
         assert arns is not None, "Expected arns to be not None"
@@ -312,9 +376,9 @@ def test_When_component_created__Then_instance_role_has_ssm_managed_policy() -> 
 
 @_pulumi_test
 def test_When_component_created__Then_instance_role_trust_policy_allows_ec2(
-    ec2_mocks: Ec2Mocks,
+    ec2_mocks: Ec2Mocks, faker: Faker
 ) -> pulumi.Output[None]:
-    component = _new_ec2_with_rdp()
+    component = _new_ec2_with_rdp(faker=faker)
 
     def check(_: str) -> None:
         policy_calls = [c for c in ec2_mocks.captured_calls if c.token == "aws:iam/getPolicyDocument:getPolicyDocument"]  # noqa:S105 # definitely not a password
