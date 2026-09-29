@@ -13,6 +13,7 @@ import pulumi.runtime
 import pytest
 from faker import Faker
 from pulumi_aws.iam import GetPolicyDocumentStatementArgsDict
+from pulumi_aws_native import Provider
 from pulumi_aws_native import TagArgs
 from pulumi_aws_native import ec2
 from pulumi_aws_native.outputs import Tag
@@ -27,6 +28,7 @@ from lab_auto_pulumi.ec2 import NewSecurityGroupConfig
 _pulumi_test = pulumi.runtime.test  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType] # pulumi.runtime.test is partially typed in the Pulumi SDK; alias avoids repeating the ignore on every test
 
 _EC2_INSTANCE_TYPES = ["t3.micro", "t3.large", "m5.xlarge", "c5.2xlarge"]
+_AWS_REGIONS = ["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-2"]
 _POLICY_STATEMENTS_ADAPTER = TypeAdapter(list[GetPolicyDocumentStatementArgsDict])
 
 
@@ -40,6 +42,7 @@ class Ec2Mocks(pulumi.runtime.Mocks):
         self.faker = faker
         self.created_resources: list[pulumi.runtime.MockResourceArgs] = []
         self.captured_calls: list[pulumi.runtime.MockCallArgs] = []
+        self.partition = random.choice(["aws", "aws-cn", "aws-us-gov"])
 
     def new_resource(self, args: pulumi.runtime.MockResourceArgs) -> tuple[str, dict[str, Any]]:  # type: ignore[override] # pyright infers Optional[str] for id but str is always safe here
         self.created_resources.append(args)
@@ -63,6 +66,8 @@ class Ec2Mocks(pulumi.runtime.Mocks):
                     }
                 )
             }
+        if args.token == "aws-native:index:getPartition":  # noqa:S105 # definitely not a password
+            return {"partition": self.partition}
         return {}
 
 
@@ -150,6 +155,10 @@ def _random_security_group_config(faker: Faker) -> NewSecurityGroupConfig | Exis
 
 def _ssm_stub_value(path: str) -> str:
     return f"mock-value-for:{path}"
+
+
+def _expected_ssm_managed_instance_core_arn(mocks: Ec2Mocks) -> str:
+    return f"arn:{mocks.partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
 
 
 def _run_pulumi_program(program: Callable[[], object]) -> None:
@@ -377,13 +386,15 @@ def test_When_additional_instance_tags_provided__Then_tags_appear_on_instance(fa
 
 
 @_pulumi_test
-def test_When_component_created__Then_instance_role_has_ssm_managed_policy(faker: Faker) -> pulumi.Output[None]:
-    component = _new_ec2_with_rdp(faker=faker)
+def test_When_component_created__Then_instance_role_has_ssm_managed_policy_in_resolved_partition(
+    ec2_mocks: Ec2Mocks, faker: Faker
+) -> pulumi.Output[None]:
+    component = _new_ec2_with_rdp(
+        faker=faker,
+    )
 
     def check(arns: Sequence[str] | None) -> None:
-        assert arns is not None, "Expected arns to be not None"
-        expected = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-        assert expected in arns, f"Expected SSM policy in {arns}"
+        assert arns == [_expected_ssm_managed_instance_core_arn(ec2_mocks)]
 
     return component.instance_role.managed_policy_arns.apply(check)
 
@@ -409,3 +420,25 @@ def test_When_component_created__Then_instance_role_trust_policy_allows_ec2(
         assert principals[0]["identifiers"] == ["ec2.amazonaws.com"]
 
     return component.instance_role.assume_role_policy_document.apply(check)
+
+
+def test_Given_parent_with_aws_native_provider__When_component_created__Then_partition_invoke_uses_parent_provider(
+    ec2_mocks: Ec2Mocks, faker: Faker
+) -> None:
+    expected_provider_refs: list[str] = []
+
+    def create_component() -> pulumi.Output[None]:
+        provider = Provider(faker.slug(), region=random.choice(_AWS_REGIONS))
+        parent = pulumi.ComponentResource(
+            "test:index:Parent", faker.slug(), opts=pulumi.ResourceOptions(providers=[provider])
+        )
+        _ = _new_ec2_with_rdp(faker=faker, parent=parent)
+        return pulumi.Output.concat(provider.urn, "::", provider.id).apply(expected_provider_refs.append)
+
+    _run_pulumi_program(create_component)
+
+    invokes = [c for c in ec2_mocks.captured_calls if c.token == "aws-native:index:getPartition"]  # noqa:S105 # definitely not a password
+
+    assert len(invokes) == 1
+    assert len(expected_provider_refs) == 1
+    assert invokes[0].provider == expected_provider_refs[0]
