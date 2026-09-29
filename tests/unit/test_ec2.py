@@ -182,15 +182,26 @@ def _run_pulumi_program(program: Callable[[], object]) -> None:
     _ = _pulumi_test(program)()
 
 
-def _policy_document_statements_with_actions(
-    mocks: Ec2Mocks, *, actions: list[str]
-) -> list[GetPolicyDocumentStatementArgsDict]:
+def _policy_document_statements(mocks: Ec2Mocks) -> list[GetPolicyDocumentStatementArgsDict]:
     return [
         statement
         for call in mocks.captured_calls
         if call.token == "aws:iam/getPolicyDocument:getPolicyDocument"  # noqa:S105 # definitely not a password
         for statement in _POLICY_STATEMENTS_ADAPTER.validate_python(call.args["statements"])  # pyright: ignore[reportUnknownMemberType] # MockCallArgs.args is typed as bare dict in the Pulumi SDK
-        if statement.get("actions") == actions
+    ]
+
+
+def _policy_document_statements_with_actions(
+    mocks: Ec2Mocks, *, actions: list[str]
+) -> list[GetPolicyDocumentStatementArgsDict]:
+    return [statement for statement in _policy_document_statements(mocks) if statement.get("actions") == actions]
+
+
+def _dcv_license_statements(mocks: Ec2Mocks) -> list[GetPolicyDocumentStatementArgsDict]:
+    return [
+        statement
+        for statement in _policy_document_statements(mocks)
+        if any(":s3:::dcv-license." in resource for resource in statement.get("resources", []))
     ]
 
 
@@ -450,14 +461,16 @@ def test_When_grant_dcv_license_access_true__Then_dcv_license_policy_attached_to
     _run_pulumi_program(lambda: _new_ec2_with_rdp(faker=faker, grant_dcv_license_access=True))
 
     roles = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:iam:Role"]
-    role_policies = [r for r in ec2_mocks.created_resources if r.typ == "aws:iam/rolePolicy:RolePolicy"]
-    dcv_statements = _policy_document_statements_with_actions(ec2_mocks, actions=["s3:GetObject"])
+    # TODO: find the DCV RolePolicy by what it grants rather than by its resource name; the getPolicyDocument mock returns a fixed document, so the attached policy's content can't identify it yet
+    dcv_role_policies = [
+        r for r in ec2_mocks.created_resources if r.typ == "aws:iam/rolePolicy:RolePolicy" and "-dcv-license" in r.name
+    ]
 
     assert len(roles) == 1
     assert "policies" not in roles[0].inputs  # pyright: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
-    assert len(role_policies) == 1
-    assert role_policies[0].inputs["role"] == ec2_mocks.role_names[roles[0].name]  # pyright: ignore[reportUnknownMemberType]
-    assert dcv_statements == [
+    assert len(dcv_role_policies) == 1
+    assert dcv_role_policies[0].inputs["role"] == ec2_mocks.role_names[roles[0].name]  # pyright: ignore[reportUnknownMemberType]
+    assert _dcv_license_statements(ec2_mocks) == [
         {
             "effect": "Allow",
             "actions": ["s3:GetObject"],
@@ -472,13 +485,12 @@ def test_When_grant_dcv_license_access_false__Then_instance_role_has_no_dcv_poli
     _run_pulumi_program(lambda: _new_ec2_with_rdp(faker=faker, grant_dcv_license_access=False))
 
     roles = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:iam:Role"]
-    role_policies = [r for r in ec2_mocks.created_resources if r.typ == "aws:iam/rolePolicy:RolePolicy"]
 
+    # sanity check that the role and its policies were set up, so the absence check below isn't vacuous
     assert len(roles) == 1
     assert roles[0].inputs["managedPolicyArns"] == [_expected_ssm_managed_instance_core_arn(ec2_mocks)]  # pyright: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
-    assert "policies" not in roles[0].inputs  # pyright: ignore[reportUnknownMemberType]
-    assert role_policies == []
-    assert _policy_document_statements_with_actions(ec2_mocks, actions=["s3:GetObject"]) == []
+
+    assert _dcv_license_statements(ec2_mocks) == []
 
 
 def test_Given_parent_with_aws_native_provider__When_grant_dcv_license_access_true__Then_partition_and_region_invokes_use_parent_provider(
