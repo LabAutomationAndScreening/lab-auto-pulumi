@@ -102,23 +102,29 @@ def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more rea
         ),
     ):
         return Ec2WithRdp(
-            name=_or_random(name, faker.slug),
-            central_networking_subnet_name=_or_random(central_networking_subnet_name, faker.slug),
-            instance_type=_or_random(instance_type, lambda: random.choice(_EC2_INSTANCE_TYPES)),
-            image_id=_or_random(image_id, lambda: f"ami-{faker.hexify('^^^^^^^^')}"),
-            security_group_config=_or_random(security_group_config, lambda: _random_security_group_config(faker)),
-            user_data=_or_random(user_data, lambda: random.choice([None, pulumi.Output.from_input(faker.sentence())])),
-            additional_instance_tags=_or_random(additional_instance_tags, lambda: _random_tags(faker)),
+            name=_or_random(name, factory=faker.slug),
+            central_networking_subnet_name=_or_random(central_networking_subnet_name, factory=faker.slug),
+            instance_type=_or_random(instance_type, factory=lambda: random.choice(_EC2_INSTANCE_TYPES)),
+            image_id=_or_random(image_id, factory=lambda: f"ami-{faker.hexify('^^^^^^^^')}"),
+            security_group_config=_or_random(
+                security_group_config, factory=lambda: _random_security_group_config(faker)
+            ),
+            user_data=_or_random(
+                user_data, factory=lambda: random.choice([None, pulumi.Output.from_input(faker.sentence())])
+            ),
+            additional_instance_tags=_or_random(additional_instance_tags, factory=lambda: _random_tags(faker)),
             instance_ignore_changes=_or_random(
                 instance_ignore_changes,
-                lambda: random.choice([None, random.sample(["imageId", "tags", "userData"], k=random.randint(0, 2))]),
+                factory=lambda: random.choice(
+                    [None, random.sample(["imageId", "tags", "userData"], k=random.randint(0, 2))]
+                ),
             ),
-            grant_dcv_license_access=_or_random(grant_dcv_license_access, lambda: random.choice([True, False])),
-            parent=_or_random(parent, lambda: _random_parent(faker)),
+            grant_dcv_license_access=_or_random(grant_dcv_license_access, factory=lambda: random.choice([True, False])),
+            parent=_or_random(parent, factory=lambda: _random_parent(faker)),
         )
 
 
-def _or_random[T](value: T | _Unset, factory: Callable[[], T]) -> T:
+def _or_random[T](value: T | _Unset, *, factory: Callable[[], T]) -> T:
     if isinstance(value, _Unset):
         return factory()
     return value
