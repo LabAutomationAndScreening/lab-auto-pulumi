@@ -7,8 +7,11 @@
 # =====================================================================================================
 import asyncio
 import logging
+from collections.abc import Callable
 from collections.abc import Generator
-from unittest import mock
+from concurrent.futures import Future
+from concurrent.futures import ThreadPoolExecutor
+from typing import override
 
 import pytest
 
@@ -28,34 +31,35 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
     # before each test and tear it down after.
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+    loop.set_default_executor(ImmediateExecutor())
     yield loop
     loop.close()
     asyncio.set_event_loop(None)
 
 
-@pytest.fixture(autouse=True, scope="session")
-def close_worker_thread_event_loops() -> Generator[None, None, None]:
-    """Close event loops that Pulumi's mock monitor creates on its worker threads.
+class ImmediateExecutor(ThreadPoolExecutor):
+    """Run submitted callables inline on the calling thread instead of on pool threads.
 
-    The mock monitor serves Invoke/ReadResource/RegisterResource on thread-pool threads and calls
-    `_ensure_event_loop()` on each, which creates a thread-local loop that is never closed. Left open, those
-    loops are garbage-collected at interpreter exit after their self-pipe is gone, raising
-    `ValueError: Invalid file descriptor: -1` from `BaseEventLoop.__del__`, which pytest reports as a
-    PytestUnraisableExceptionWarning.
+    Pulumi's SDK sends every mock monitor call through `loop.run_in_executor(None, ...)`. On pool threads the mock
+    monitor calls `_ensure_event_loop()`, creating a thread-local loop that is never closed; those loops are
+    garbage-collected at interpreter exit after their self-pipe is gone, raising
+    `ValueError: Invalid file descriptor: -1` from `BaseEventLoop.__del__`. The threading also makes mock tests
+    flaky. Pulumi's own mock tests use the same workaround: https://github.com/pulumi/pulumi/pull/7666
 
-    Upstream, https://github.com/pulumi/pulumi/issues/7663 proposes removing the SDK's thread-pool hops, which
-    would make this unnecessary.
+    Subclasses ThreadPoolExecutor because `loop.set_default_executor` rejects any other executor type. No worker
+    thread is ever started because `submit` never delegates to the pool.
     """
-    created_loops: list[asyncio.AbstractEventLoop] = []
-    original_new_event_loop = asyncio.new_event_loop
 
-    def tracking_new_event_loop() -> asyncio.AbstractEventLoop:
-        loop = original_new_event_loop()
-        created_loops.append(loop)
-        return loop
+    def __init__(self) -> None:
+        super().__init__(max_workers=1)
 
-    with mock.patch.object(asyncio, asyncio.new_event_loop.__name__, tracking_new_event_loop):
-        yield
-    for loop in created_loops:
-        if not loop.is_closed():
-            loop.close()
+    @override
+    def submit[**P, T](self, fn: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -> Future[T]:
+        future = Future[T]()
+        try:
+            result = fn(*args, **kwargs)
+        except BaseException as e:  # noqa: BLE001 # mirrors ThreadPoolExecutor's worker, which routes every exception into the future for the awaiting caller to re-raise
+            future.set_exception(e)
+        else:
+            future.set_result(result)
+        return future
