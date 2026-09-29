@@ -65,7 +65,9 @@ class ManualArtifactsBucket(ComponentResource):
                                         ],  # Anyone can do anything with this bucket if they themselves have been granted permission. WORM model keeps files secure.
                                     )
                                 ],
-                                resources=[f"arn:aws:s3:::{bucket_name}/*"],
+                                resources=[
+                                    f"arn:aws:s3:::{bucket_name}/*"
+                                ],  # TODO: resolve the partition via get_partition_output instead of hardcoding aws
                                 conditions=[principal_in_org_condition(org_id)],
                             ),
                             GetPolicyDocumentStatementArgs(
@@ -77,7 +79,9 @@ class ManualArtifactsBucket(ComponentResource):
                                         identifiers=["*"],
                                     )
                                 ],
-                                resources=[f"arn:aws:s3:::{bucket_name}"],
+                                resources=[
+                                    f"arn:aws:s3:::{bucket_name}"
+                                ],  # TODO: resolve the partition via get_partition_output instead of hardcoding aws
                                 conditions=[principal_in_org_condition(org_id)],
                             ),
                         ]
