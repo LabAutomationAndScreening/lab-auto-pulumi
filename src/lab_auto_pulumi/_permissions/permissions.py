@@ -78,7 +78,7 @@ class AwsSsoPermissionSet(ComponentResource):
             _ = ssoadmin.ManagedPolicyAttachment(
                 f"{name}-{policy_name}",
                 instance_arn=ORG_INFO.sso_instance_arn,
-                managed_policy_arn=f"arn:aws:iam::aws:policy/{policy_name}",
+                managed_policy_arn=f"arn:aws:iam::aws:policy/{policy_name}",  # TODO: resolve the partition via get_partition_output instead of hardcoding aws
                 permission_set_arn=self.permission_set_arn,
                 opts=ResourceOptions(parent=self),
             )

@@ -30,7 +30,6 @@ _EC2_INSTANCE_TYPES = ["t3.micro", "t3.large", "m5.xlarge", "c5.2xlarge"]
 _AWS_REGIONS = ["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-2"]
 _AWS_PARTITIONS = ["aws", "aws-cn", "aws-us-gov"]
 _POLICY_STATEMENTS_ADAPTER = TypeAdapter(list[GetPolicyDocumentStatementArgsDict])
-_SSM_MANAGED_INSTANCE_CORE_ARN = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 _IGNORABLE_INSTANCE_PROPERTIES = ["imageId", "tags", "userData"]
 
 
@@ -155,6 +154,10 @@ def _random_security_group_config(faker: Faker) -> NewSecurityGroupConfig | Exis
 
 def _ssm_side_effect(param: str) -> str:
     return f"mock-{param.rsplit('/', maxsplit=1)[-1]}"
+
+
+def _expected_ssm_managed_instance_core_arn(mocks: Ec2Mocks) -> str:
+    return f"arn:{mocks.partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
 
 
 def _expected_dcv_license_policy(mocks: Ec2Mocks) -> tuple[str, dict[str, object]]:
@@ -384,12 +387,13 @@ def test_When_additional_instance_tags_provided__Then_tags_appear_on_instance(fa
 
 
 @_pulumi_test
-def test_When_component_created__Then_instance_role_has_ssm_managed_policy() -> pulumi.Output[None]:
+def test_When_component_created__Then_instance_role_has_ssm_managed_policy_in_resolved_partition(
+    ec2_mocks: Ec2Mocks,
+) -> pulumi.Output[None]:
     component = _new_ec2_with_rdp()
 
     def check(arns: Sequence[str] | None) -> None:
-        assert arns is not None
-        assert _SSM_MANAGED_INSTANCE_CORE_ARN in arns
+        assert arns == [_expected_ssm_managed_instance_core_arn(ec2_mocks)]
 
     return component.instance_role.managed_policy_arns.apply(check)
 
@@ -434,7 +438,7 @@ def test_When_enable_dcv_false__Then_instance_role_has_no_dcv_policy(ec2_mocks: 
     def check(arns: Sequence[str] | None, policies: Sequence[RolePolicy] | None) -> None:
         # sanity check that policy attachment worked at all, so the absence check below isn't vacuous
         assert arns is not None
-        assert _SSM_MANAGED_INSTANCE_CORE_ARN in arns
+        assert _expected_ssm_managed_instance_core_arn(ec2_mocks) in arns
         assert _expected_dcv_license_policy(ec2_mocks) not in _inline_policies(policies)
 
     return component.instance_role.managed_policy_arns.apply(

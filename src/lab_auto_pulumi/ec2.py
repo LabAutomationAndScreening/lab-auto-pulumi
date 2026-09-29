@@ -40,7 +40,7 @@ class ExistingSecurityGroupConfig(BaseModel):
     security_group_id: Output[str]
 
 
-def _dcv_license_policy() -> iam.RolePolicyArgs:
+def _dcv_license_policy(*, partition: Output[str]) -> iam.RolePolicyArgs:
     # https://docs.aws.amazon.com/dcv/latest/adminguide/setting-up-license.html
     return iam.RolePolicyArgs(
         policy_name="DcvLicenseAccess",
@@ -52,7 +52,7 @@ def _dcv_license_policy() -> iam.RolePolicyArgs:
                     "Action": "s3:GetObject",
                     "Resource": Output.concat(
                         "arn:",
-                        get_partition_output().partition,
+                        partition,
                         ":s3:::dcv-license.",
                         get_region_output().region,
                         "/*",
@@ -92,9 +92,10 @@ class Ec2WithRdp(ComponentResource):
         if additional_instance_tags is None:
             additional_instance_tags = []
         resource_name = f"{name}-ec2"
+        partition = get_partition_output().partition
         inline_policies: list[iam.RolePolicyArgs] | None = None
         if enable_dcv:
-            inline_policies = [_dcv_license_policy()]
+            inline_policies = [_dcv_license_policy(partition=partition)]
         self.instance_role = iam.Role(
             append_resource_suffix(resource_name),
             assume_role_policy_document=get_policy_document(
@@ -108,7 +109,7 @@ class Ec2WithRdp(ComponentResource):
                     )
                 ]
             ).json,
-            managed_policy_arns=["arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"],
+            managed_policy_arns=[Output.concat("arn:", partition, ":iam::aws:policy/AmazonSSMManagedInstanceCore")],
             policies=inline_policies,
             tags=common_tags_native(),
             opts=ResourceOptions(parent=self),
