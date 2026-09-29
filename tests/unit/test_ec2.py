@@ -20,6 +20,7 @@ from pulumi_aws_native import ec2
 from pulumi_aws_native.outputs import Tag
 from pydantic import TypeAdapter
 
+from lab_auto_pulumi import CENTRAL_NETWORKING_SSM_PREFIX
 from lab_auto_pulumi import ec2 as lab_auto_ec2_module
 from lab_auto_pulumi.ec2 import Ec2WithRdp
 from lab_auto_pulumi.ec2 import ExistingSecurityGroupConfig
@@ -99,7 +100,7 @@ def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more rea
         mock.patch.object(
             lab_auto_ec2_module,
             lab_auto_ec2_module.get_org_managed_ssm_param_value.__name__,
-            side_effect=_ssm_side_effect,
+            side_effect=_ssm_stub_value,
         ),
     ):
         return Ec2WithRdp(
@@ -158,8 +159,8 @@ def _random_security_group_config(faker: Faker) -> NewSecurityGroupConfig | Exis
     )
 
 
-def _ssm_side_effect(param: str) -> str:
-    return f"mock-{param.rsplit('/', maxsplit=1)[-1]}"
+def _ssm_stub_value(path: str) -> str:
+    return f"mock-value-for:{path}"
 
 
 def _expected_ssm_managed_instance_core_arn(mocks: Ec2Mocks) -> str:
@@ -216,17 +217,18 @@ class TestNewSecurityGroupConfig:
         self, faker: Faker
     ) -> pulumi.Output[None]:
         image_id = f"ami-{faker.hexify('^^^^^^^^')}"
+        subnet_name = faker.slug()
         component = _new_ec2_with_rdp(
             faker=faker,
             image_id=image_id,
-            central_networking_subnet_name=faker.slug(),
+            central_networking_subnet_name=subnet_name,
             security_group_config=NewSecurityGroupConfig(central_networking_vpc_name=faker.slug()),
         )
 
         def check(args: list[object]) -> None:
             actual_image_id, actual_subnet_id = args
             assert actual_image_id == image_id
-            assert actual_subnet_id == "mock-id", f"Expected 'mock-id' but got {actual_subnet_id!r}"
+            assert actual_subnet_id == _ssm_stub_value(f"{CENTRAL_NETWORKING_SSM_PREFIX}/subnets/{subnet_name}/id")
 
         return pulumi.Output.all(
             component.instance.image_id,
@@ -237,12 +239,13 @@ class TestNewSecurityGroupConfig:
     def test_When_new_sg_config__Then_security_group_created_with_vpc_id_from_ssm(
         self, faker: Faker
     ) -> pulumi.Output[None]:
+        vpc_name = faker.slug()
         component = _new_ec2_with_rdp(
-            faker=faker, security_group_config=NewSecurityGroupConfig(central_networking_vpc_name=faker.slug())
+            faker=faker, security_group_config=NewSecurityGroupConfig(central_networking_vpc_name=vpc_name)
         )
 
         def check(vpc_id: str | None) -> None:
-            assert vpc_id == "mock-id", f"Expected 'mock-id' but got {vpc_id!r}"
+            assert vpc_id == _ssm_stub_value(f"{CENTRAL_NETWORKING_SSM_PREFIX}/vpcs/{vpc_name}/id")
 
         return component.security_group.vpc_id.apply(check)
 
