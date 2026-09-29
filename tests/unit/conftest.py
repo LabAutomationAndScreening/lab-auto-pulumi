@@ -8,6 +8,7 @@
 import asyncio
 import logging
 from collections.abc import Generator
+from unittest import mock
 
 import pytest
 
@@ -30,3 +31,31 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
     yield loop
     loop.close()
     asyncio.set_event_loop(None)
+
+
+@pytest.fixture(autouse=True, scope="session")
+def close_worker_thread_event_loops() -> Generator[None, None, None]:
+    """Close event loops that Pulumi's mock monitor creates on its worker threads.
+
+    The mock monitor serves Invoke/ReadResource/RegisterResource on thread-pool threads and calls
+    `_ensure_event_loop()` on each, which creates a thread-local loop that is never closed. Left open, those
+    loops are garbage-collected at interpreter exit after their self-pipe is gone, raising
+    `ValueError: Invalid file descriptor: -1` from `BaseEventLoop.__del__`, which pytest reports as a
+    PytestUnraisableExceptionWarning.
+
+    Upstream, https://github.com/pulumi/pulumi/issues/7663 proposes removing the SDK's thread-pool hops, which
+    would make this unnecessary.
+    """
+    created_loops: list[asyncio.AbstractEventLoop] = []
+    original_new_event_loop = asyncio.new_event_loop
+
+    def tracking_new_event_loop() -> asyncio.AbstractEventLoop:
+        loop = original_new_event_loop()
+        created_loops.append(loop)
+        return loop
+
+    with mock.patch.object(asyncio, asyncio.new_event_loop.__name__, tracking_new_event_loop):
+        yield
+    for loop in created_loops:
+        if not loop.is_closed():
+            loop.close()
