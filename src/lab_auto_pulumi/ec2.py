@@ -15,6 +15,7 @@ from pulumi_aws.iam import get_policy_document
 from pulumi_aws_native import TagArgs
 from pulumi_aws_native import ec2
 from pulumi_aws_native import get_partition_output
+from pulumi_aws_native import get_region_output
 from pulumi_aws_native import iam
 from pydantic import BaseModel
 from pydantic import ConfigDict
@@ -40,6 +41,28 @@ class ExistingSecurityGroupConfig(BaseModel):
     security_group_id: Output[str]
 
 
+type _PolicyStatement = dict[str, str | list[str]]
+type _PolicyDocument = dict[str, str | list[_PolicyStatement]]
+
+
+def _dcv_license_policy(*, partition: Output[str], parent: Resource) -> Output[_PolicyDocument]:
+    # https://docs.aws.amazon.com/dcv/latest/adminguide/setting-up-license.html
+    return Output.all(
+        partition=partition, region=get_region_output(opts=InvokeOutputOptions(parent=parent)).region
+    ).apply(
+        lambda args: {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": ["s3:GetObject"],
+                    "Resource": [f"arn:{args['partition']}:s3:::dcv-license.{args['region']}/*"],
+                }
+            ],
+        }
+    )
+
+
 class Ec2WithRdp(ComponentResource):
     def __init__(  # noqa: PLR0913 # yes it's a lot to configure, but they're all kwargs
         self,
@@ -58,6 +81,7 @@ class Ec2WithRdp(ComponentResource):
         persist_user_data: bool = False,  # if false, then user data changes will result in replacing the instance (because new user data won't take effect unless the instance is replaced). if true, then you can replace the user data, but it will force an immediate restart of the EC2...which may not actually show up in the Pulumi plan
         # TODO: maybe ensure that the persist flag in the user data XML has been set, or add it automatically if it hasn't (when persist_user_data set to true)
         # remember for Windows Instances, if you create an ingress rule, you also need to create a Firewall inbound rule on the EC2 instance itself in order for it to actually be accessible
+        grant_dcv_license_access: bool = False,
         parent: Resource | None = None,
     ):
         super().__init__("labauto:Ec2WithRdp", append_resource_suffix(name), None, opts=ResourceOptions(parent=parent))
@@ -86,6 +110,13 @@ class Ec2WithRdp(ComponentResource):
             tags=common_tags_native(),
             opts=ResourceOptions(parent=self),
         )
+        if grant_dcv_license_access:
+            _ = iam.RolePolicy(
+                append_resource_suffix(f"{name}-dcv-license", max_length=99),
+                role_name=self.instance_role.role_name,
+                policy_document=_dcv_license_policy(partition=partition, parent=self),
+                opts=ResourceOptions(parent=self.instance_role),
+            )
 
         instance_profile = iam.InstanceProfile(  # pyrefly: ignore[no-matching-overload] # role_name is typed Output[str | None] because it's optional on input, but AWS always generates one once the role exists
             append_resource_suffix(name),
