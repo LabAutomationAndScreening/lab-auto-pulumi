@@ -14,6 +14,7 @@ import pulumi.runtime
 import pytest
 from faker import Faker
 from pulumi_aws.iam import GetPolicyDocumentStatementArgsDict
+from pulumi_aws_native import Provider
 from pulumi_aws_native import TagArgs
 from pulumi_aws_native import ec2
 from pulumi_aws_native.outputs import Tag
@@ -162,6 +163,10 @@ def _ssm_side_effect(param: str) -> str:
 
 def _expected_ssm_managed_instance_core_arn(mocks: Ec2Mocks) -> str:
     return f"arn:{mocks.partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+
+
+def _run_pulumi_program(program: Callable[[], object]) -> None:
+    _ = _pulumi_test(program)()
 
 
 def _policy_document_statements_with_actions(
@@ -416,11 +421,7 @@ def test_When_component_created__Then_instance_role_trust_policy_allows_ec2(
 def test_When_enable_dcv_true__Then_dcv_license_policy_attached_to_instance_role_as_separate_role_policy(
     ec2_mocks: Ec2Mocks,
 ) -> None:
-    @_pulumi_test
-    def create_component() -> None:
-        _ = _new_ec2_with_rdp(enable_dcv=True)
-
-    create_component()
+    _run_pulumi_program(lambda: _new_ec2_with_rdp(enable_dcv=True))
 
     roles = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:iam:Role"]
     role_policies = [r for r in ec2_mocks.created_resources if r.typ == "aws:iam/rolePolicy:RolePolicy"]
@@ -440,11 +441,7 @@ def test_When_enable_dcv_true__Then_dcv_license_policy_attached_to_instance_role
 
 
 def test_When_enable_dcv_false__Then_instance_role_has_no_dcv_policy(ec2_mocks: Ec2Mocks) -> None:
-    @_pulumi_test
-    def create_component() -> None:
-        _ = _new_ec2_with_rdp(enable_dcv=False)
-
-    create_component()
+    _run_pulumi_program(lambda: _new_ec2_with_rdp(enable_dcv=False))
 
     roles = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:iam:Role"]
     role_policies = [r for r in ec2_mocks.created_resources if r.typ == "aws:iam/rolePolicy:RolePolicy"]
@@ -454,3 +451,29 @@ def test_When_enable_dcv_false__Then_instance_role_has_no_dcv_policy(ec2_mocks: 
     assert "policies" not in roles[0].inputs  # pyright: ignore[reportUnknownMemberType]
     assert role_policies == []
     assert _policy_document_statements_with_actions(ec2_mocks, actions=["s3:GetObject"]) == []
+
+
+def test_Given_parent_with_aws_native_provider__When_enable_dcv_true__Then_partition_and_region_invokes_use_parent_provider(
+    ec2_mocks: Ec2Mocks, faker: Faker
+) -> None:
+    expected_provider_refs: list[str] = []
+
+    def create_component() -> pulumi.Output[None]:
+        provider = Provider(faker.slug(), region=random.choice(_AWS_REGIONS))
+        parent = pulumi.ComponentResource(
+            "test:index:Parent", faker.slug(), opts=pulumi.ResourceOptions(providers=[provider])
+        )
+        _ = _new_ec2_with_rdp(enable_dcv=True, parent=parent)
+        return pulumi.Output.concat(provider.urn, "::", provider.id).apply(expected_provider_refs.append)
+
+    _run_pulumi_program(create_component)
+
+    invokes = [
+        c
+        for c in ec2_mocks.captured_calls
+        if c.token in ("aws-native:index:getPartition", "aws-native:index:getRegion")
+    ]
+
+    assert sorted(c.token for c in invokes) == ["aws-native:index:getPartition", "aws-native:index:getRegion"]
+    assert len(expected_provider_refs) == 1
+    assert [c.provider for c in invokes] == [expected_provider_refs[0], expected_provider_refs[0]]

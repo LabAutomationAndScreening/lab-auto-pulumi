@@ -4,6 +4,7 @@ import logging
 from ephemeral_pulumi_deploy import append_resource_suffix
 from ephemeral_pulumi_deploy import common_tags_native
 from pulumi import ComponentResource
+from pulumi import InvokeOutputOptions
 from pulumi import Output
 from pulumi import Resource
 from pulumi import ResourceOptions
@@ -41,9 +42,11 @@ class ExistingSecurityGroupConfig(BaseModel):
     security_group_id: Output[str]
 
 
-def _dcv_license_policy(*, partition: Output[str]) -> Output[str]:
+def _dcv_license_policy(*, partition: Output[str], parent: Resource) -> Output[str]:
     # https://docs.aws.amazon.com/dcv/latest/adminguide/setting-up-license.html
-    return Output.all(partition=partition, region=get_region_output().region).apply(
+    return Output.all(
+        partition=partition, region=get_region_output(opts=InvokeOutputOptions(parent=parent)).region
+    ).apply(
         lambda args: (
             get_policy_document(
                 statements=[
@@ -87,7 +90,7 @@ class Ec2WithRdp(ComponentResource):
         if additional_instance_tags is None:
             additional_instance_tags = []
         resource_name = f"{name}-ec2"
-        partition = get_partition_output().partition
+        partition = get_partition_output(opts=InvokeOutputOptions(parent=self)).partition
         self.instance_role = iam.Role(
             append_resource_suffix(resource_name),
             assume_role_policy_document=get_policy_document(
@@ -109,7 +112,7 @@ class Ec2WithRdp(ComponentResource):
             _ = RolePolicy(
                 append_resource_suffix(f"{name}-dcv-license", max_length=99),
                 role=self.instance_role.role_name,
-                policy=_dcv_license_policy(partition=partition),
+                policy=_dcv_license_policy(partition=partition, parent=self),
                 opts=ResourceOptions(parent=self.instance_role),
             )
 
