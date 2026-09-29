@@ -9,7 +9,9 @@ from ._permissions import User
 from ._permissions import UserAttributes
 from ._permissions import UserInfo
 from ._permissions import Username
+from ._permissions import UserNotFoundInIdentityStoreError
 from ._permissions import all_created_users
+from ._permissions import lookup_user_id
 from ._permissions import principal_in_org_condition
 from ._s3 import ManualArtifactsBucket
 from ._s3 import create_worm_bucket
@@ -74,6 +76,7 @@ __all__ = [
     "User",
     "UserAttributes",
     "UserInfo",
+    "UserNotFoundInIdentityStoreError",
     "Username",
     "WorkloadName",
     "all_created_users",
@@ -83,5 +86,6 @@ __all__ = [
     "get_manual_artifacts_bucket_name",
     "get_org_managed_ssm_param_value",
     "get_ssm_param_value",
+    "lookup_user_id",
     "principal_in_org_condition",
 ]
