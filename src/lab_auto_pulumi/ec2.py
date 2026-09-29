@@ -156,6 +156,7 @@ class Ec2WithRdp(ComponentResource):
                     )
                 resource_safe_description = create_resource_name_safe_str(description)
 
+                # TODO: rules whose descriptions sanitize to the same string (e.g. TCP and UDP both described "DCV", or "Allow RDP" vs "allow rdp") get the same resource name and fail deployment with a duplicate URN; validate uniqueness up front with a clear ValueError, or include protocol/ports in the name (with aliases to avoid replacing existing rules)
                 _ = ec2.SecurityGroupIngress(
                     append_resource_suffix(f"{name}-ingress-{resource_safe_description}", max_length=190),
                     opts=ResourceOptions(
