@@ -30,9 +30,7 @@ _pulumi_test = pulumi.runtime.test  # pyright: ignore[reportUnknownMemberType, r
 
 _EC2_INSTANCE_TYPES = ["t3.micro", "t3.large", "m5.xlarge", "c5.2xlarge"]
 _AWS_REGIONS = ["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-2"]
-_AWS_PARTITIONS = ["aws", "aws-cn", "aws-us-gov"]
 _POLICY_STATEMENTS_ADAPTER = TypeAdapter(list[GetPolicyDocumentStatementArgsDict])
-_IGNORABLE_INSTANCE_PROPERTIES = ["imageId", "tags", "userData"]
 
 
 class _Unset(Enum):
@@ -46,7 +44,7 @@ class Ec2Mocks(pulumi.runtime.Mocks):
         self.created_resources: list[pulumi.runtime.MockResourceArgs] = []
         self.captured_calls: list[pulumi.runtime.MockCallArgs] = []
         self.region = random.choice(_AWS_REGIONS)
-        self.partition = random.choice(_AWS_PARTITIONS)
+        self.partition = random.choice(["aws", "aws-cn", "aws-us-gov"])
         self.role_names: dict[str, str] = {}
 
     def new_resource(self, args: pulumi.runtime.MockResourceArgs) -> tuple[str, dict[str, Any]]:  # type: ignore[override] # pyright infers Optional[str] for id but str is always safe here
@@ -113,7 +111,7 @@ def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more rea
             additional_instance_tags=_or_random(additional_instance_tags, lambda: _random_tags(faker)),
             instance_ignore_changes=_or_random(
                 instance_ignore_changes,
-                lambda: random.choice([None, random.sample(_IGNORABLE_INSTANCE_PROPERTIES, k=random.randint(0, 2))]),
+                lambda: random.choice([None, random.sample(["imageId", "tags", "userData"], k=random.randint(0, 2))]),
             ),
             grant_dcv_license_access=_or_random(grant_dcv_license_access, lambda: random.choice([True, False])),
             parent=_or_random(parent, lambda: _random_parent(faker)),
