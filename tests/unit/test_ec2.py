@@ -222,6 +222,7 @@ class TestNewSecurityGroupConfig:
 
         return component.security_group.vpc_id.apply(check)
 
+    # TODO: the ingress rules here and in _random_security_group_config have no source (AWS requires one of cidr_ip, cidr_ipv6, source_prefix_list_id or source_security_group_id); supply a random source and assert it reaches the SecurityGroupIngress resource
     def test_When_new_sg_with_ingress_rule__Then_ingress_resource_created(
         self, ec2_mocks: Ec2Mocks, faker: Faker
     ) -> None:

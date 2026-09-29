@@ -133,6 +133,7 @@ class Ec2WithRdp(ComponentResource):
                     ip_protocol=rule_args.ip_protocol,
                     from_port=rule_args.from_port,
                     to_port=rule_args.to_port,
+                    # TODO: only source_security_group_id is forwarded; cidr_ip, cidr_ipv6 and source_prefix_list_id on the rule are silently dropped, so a CIDR-based rule deploys without a source
                     source_security_group_id=rule_args.source_security_group_id,
                     group_id=self.security_group.id,
                     description=rule_args.description,
