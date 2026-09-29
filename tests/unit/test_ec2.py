@@ -92,7 +92,7 @@ def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more rea
     user_data: pulumi.Output[str] | _Unset | None = _Unset.TOKEN,
     additional_instance_tags: list[TagArgs] | _Unset | None = _Unset.TOKEN,
     instance_ignore_changes: list[str] | _Unset | None = _Unset.TOKEN,
-    enable_dcv: bool | _Unset = _Unset.TOKEN,
+    grant_dcv_license_access: bool | _Unset = _Unset.TOKEN,
     parent: pulumi.Resource | _Unset | None = _Unset.TOKEN,
 ) -> Ec2WithRdp:
     with (
@@ -115,7 +115,7 @@ def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more rea
                 instance_ignore_changes,
                 lambda: random.choice([None, random.sample(_IGNORABLE_INSTANCE_PROPERTIES, k=random.randint(0, 2))]),
             ),
-            enable_dcv=_or_random(enable_dcv, lambda: random.choice([True, False])),
+            grant_dcv_license_access=_or_random(grant_dcv_license_access, lambda: random.choice([True, False])),
             parent=_or_random(parent, lambda: _random_parent(faker)),
         )
 
@@ -439,10 +439,10 @@ def test_When_component_created__Then_instance_role_trust_policy_allows_ec2(
     return component.instance_role.assume_role_policy_document.apply(check)
 
 
-def test_When_enable_dcv_true__Then_dcv_license_policy_attached_to_instance_role_as_separate_role_policy(
+def test_When_grant_dcv_license_access_true__Then_dcv_license_policy_attached_to_instance_role_as_separate_role_policy(
     ec2_mocks: Ec2Mocks, faker: Faker
 ) -> None:
-    _run_pulumi_program(lambda: _new_ec2_with_rdp(faker=faker, enable_dcv=True))
+    _run_pulumi_program(lambda: _new_ec2_with_rdp(faker=faker, grant_dcv_license_access=True))
 
     roles = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:iam:Role"]
     role_policies = [r for r in ec2_mocks.created_resources if r.typ == "aws:iam/rolePolicy:RolePolicy"]
@@ -461,8 +461,10 @@ def test_When_enable_dcv_true__Then_dcv_license_policy_attached_to_instance_role
     ]
 
 
-def test_When_enable_dcv_false__Then_instance_role_has_no_dcv_policy(ec2_mocks: Ec2Mocks, faker: Faker) -> None:
-    _run_pulumi_program(lambda: _new_ec2_with_rdp(faker=faker, enable_dcv=False))
+def test_When_grant_dcv_license_access_false__Then_instance_role_has_no_dcv_policy(
+    ec2_mocks: Ec2Mocks, faker: Faker
+) -> None:
+    _run_pulumi_program(lambda: _new_ec2_with_rdp(faker=faker, grant_dcv_license_access=False))
 
     roles = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:iam:Role"]
     role_policies = [r for r in ec2_mocks.created_resources if r.typ == "aws:iam/rolePolicy:RolePolicy"]
@@ -474,7 +476,7 @@ def test_When_enable_dcv_false__Then_instance_role_has_no_dcv_policy(ec2_mocks: 
     assert _policy_document_statements_with_actions(ec2_mocks, actions=["s3:GetObject"]) == []
 
 
-def test_Given_parent_with_aws_native_provider__When_enable_dcv_true__Then_partition_and_region_invokes_use_parent_provider(
+def test_Given_parent_with_aws_native_provider__When_grant_dcv_license_access_true__Then_partition_and_region_invokes_use_parent_provider(
     ec2_mocks: Ec2Mocks, faker: Faker
 ) -> None:
     expected_provider_refs: list[str] = []
@@ -484,7 +486,7 @@ def test_Given_parent_with_aws_native_provider__When_enable_dcv_true__Then_parti
         parent = pulumi.ComponentResource(
             "test:index:Parent", faker.slug(), opts=pulumi.ResourceOptions(providers=[provider])
         )
-        _ = _new_ec2_with_rdp(faker=faker, enable_dcv=True, parent=parent)
+        _ = _new_ec2_with_rdp(faker=faker, grant_dcv_license_access=True, parent=parent)
         return pulumi.Output.concat(provider.urn, "::", provider.id).apply(expected_provider_refs.append)
 
     _run_pulumi_program(create_component)
