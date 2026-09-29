@@ -1,6 +1,7 @@
 import base64
 import json
 import random
+from collections.abc import Callable
 from collections.abc import Sequence
 from enum import Enum
 from enum import auto
@@ -30,6 +31,7 @@ _AWS_REGIONS = ["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-2"]
 _AWS_PARTITIONS = ["aws", "aws-cn", "aws-us-gov"]
 _POLICY_STATEMENTS_ADAPTER = TypeAdapter(list[GetPolicyDocumentStatementArgsDict])
 _SSM_MANAGED_INSTANCE_CORE_ARN = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+_IGNORABLE_INSTANCE_PROPERTIES = ["imageId", "tags", "userData"]
 
 
 class _Unset(Enum):
@@ -75,36 +77,18 @@ class Ec2Mocks(pulumi.runtime.Mocks):
 
 def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more readable to specify them as arguments in the tests than pack them into a config object, they are keyword args anyways with a bunch of default values
     *,
-    name: str | None = None,
-    central_networking_subnet_name: str | None = None,
-    instance_type: str | None = None,
-    image_id: str | None = None,
-    security_group_config: NewSecurityGroupConfig | ExistingSecurityGroupConfig | None = None,
+    name: str | _Unset = _Unset.TOKEN,
+    central_networking_subnet_name: str | _Unset = _Unset.TOKEN,
+    instance_type: str | _Unset = _Unset.TOKEN,
+    image_id: str | _Unset = _Unset.TOKEN,
+    security_group_config: NewSecurityGroupConfig | ExistingSecurityGroupConfig | _Unset = _Unset.TOKEN,
     user_data: pulumi.Output[str] | _Unset | None = _Unset.TOKEN,
-    additional_instance_tags: list[TagArgs] | None = None,
-    enable_dcv: bool | None = None,
+    additional_instance_tags: list[TagArgs] | _Unset | None = _Unset.TOKEN,
+    instance_ignore_changes: list[str] | _Unset | None = _Unset.TOKEN,
+    enable_dcv: bool | _Unset = _Unset.TOKEN,
+    parent: pulumi.Resource | _Unset | None = _Unset.TOKEN,
 ) -> Ec2WithRdp:
-    _faker = Faker()
-    if name is None:
-        name = _faker.slug()
-    if central_networking_subnet_name is None:
-        central_networking_subnet_name = _faker.slug()
-    if instance_type is None:
-        instance_type = random.choice(_EC2_INSTANCE_TYPES)
-    if image_id is None:
-        image_id = f"ami-{_faker.hexify('????????')}"
-    if security_group_config is None:
-        security_group_config = _random_security_group_config(_faker)
-    if isinstance(user_data, _Unset):
-        resolved_user_data = random.choice([None, pulumi.Output.from_input(_faker.sentence())])
-    else:
-        resolved_user_data = user_data
-    if additional_instance_tags is None:
-        additional_instance_tags = [
-            TagArgs(key=_faker.unique.word(), value=_faker.word()) for _ in range(random.randint(0, 3))
-        ]
-    if enable_dcv is None:
-        enable_dcv = random.choice([True, False])
+    faker = Faker()
     with (
         mock.patch.object(lab_auto_ec2_module, lab_auto_ec2_module.common_tags_native.__name__, return_value=[]),
         mock.patch.object(
@@ -114,15 +98,38 @@ def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more rea
         ),
     ):
         return Ec2WithRdp(
-            name=name,
-            central_networking_subnet_name=central_networking_subnet_name,
-            instance_type=instance_type,
-            image_id=image_id,
-            security_group_config=security_group_config,
-            user_data=resolved_user_data,
-            additional_instance_tags=additional_instance_tags,
-            enable_dcv=enable_dcv,
+            name=_or_random(name, faker.slug),
+            central_networking_subnet_name=_or_random(central_networking_subnet_name, faker.slug),
+            instance_type=_or_random(instance_type, lambda: random.choice(_EC2_INSTANCE_TYPES)),
+            image_id=_or_random(image_id, lambda: f"ami-{faker.hexify('^^^^^^^^')}"),
+            security_group_config=_or_random(security_group_config, lambda: _random_security_group_config(faker)),
+            user_data=_or_random(user_data, lambda: random.choice([None, pulumi.Output.from_input(faker.sentence())])),
+            additional_instance_tags=_or_random(additional_instance_tags, lambda: _random_tags(faker)),
+            instance_ignore_changes=_or_random(
+                instance_ignore_changes,
+                lambda: random.choice([None, random.sample(_IGNORABLE_INSTANCE_PROPERTIES, k=random.randint(0, 2))]),
+            ),
+            enable_dcv=_or_random(enable_dcv, lambda: random.choice([True, False])),
+            parent=_or_random(parent, lambda: _random_parent(faker)),
         )
+
+
+def _or_random[T](value: T | _Unset, factory: Callable[[], T]) -> T:
+    if isinstance(value, _Unset):
+        return factory()
+    return value
+
+
+def _random_tags(faker: Faker) -> list[TagArgs] | None:
+    return random.choice(
+        [None, [TagArgs(key=faker.unique.word(), value=faker.word()) for _ in range(random.randint(0, 3))]]
+    )
+
+
+def _random_parent(faker: Faker) -> pulumi.Resource | None:
+    if random.choice([True, False]):
+        return pulumi.ComponentResource("test:index:Parent", faker.slug())
+    return None
 
 
 def _random_security_group_config(faker: Faker) -> NewSecurityGroupConfig | ExistingSecurityGroupConfig:
@@ -141,7 +148,7 @@ def _random_security_group_config(faker: Faker) -> NewSecurityGroupConfig | Exis
                     )
                 ],
             ),
-            ExistingSecurityGroupConfig(security_group_id=pulumi.Output.from_input(f"sg-{faker.hexify('????????')}")),
+            ExistingSecurityGroupConfig(security_group_id=pulumi.Output.from_input(f"sg-{faker.hexify('^^^^^^^^')}")),
         ]
     )
 
@@ -197,7 +204,7 @@ class TestNewSecurityGroupConfig:
     def test_When_new_sg_config__Then_instance_has_correct_image_id_and_subnet(
         self, faker: Faker
     ) -> pulumi.Output[None]:
-        image_id = f"ami-{faker.hexify('????????')}"
+        image_id = f"ami-{faker.hexify('^^^^^^^^')}"
         component = _new_ec2_with_rdp(
             image_id=image_id,
             central_networking_subnet_name=faker.slug(),
@@ -292,7 +299,7 @@ class TestExistingSecurityGroup:
     def test_When_existing_sg_config__Then_no_new_security_group_resource_created(
         self, faker: Faker, ec2_mocks: Ec2Mocks
     ) -> pulumi.Output[None]:
-        sg_id = f"sg-{faker.hexify('????????')}"
+        sg_id = f"sg-{faker.hexify('^^^^^^^^')}"
         component = _new_ec2_with_rdp(
             security_group_config=ExistingSecurityGroupConfig(security_group_id=pulumi.Output.from_input(sg_id))
         )
@@ -317,7 +324,7 @@ class TestExistingSecurityGroup:
 
     @_pulumi_test
     def test_When_existing_sg_config__Then_instance_uses_provided_sg_id(self, faker: Faker) -> pulumi.Output[None]:
-        sg_id = f"sg-{faker.hexify('????????')}"
+        sg_id = f"sg-{faker.hexify('^^^^^^^^')}"
         component = _new_ec2_with_rdp(
             security_group_config=ExistingSecurityGroupConfig(security_group_id=pulumi.Output.from_input(sg_id))
         )
