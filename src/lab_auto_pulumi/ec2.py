@@ -10,6 +10,7 @@ from pulumi import ResourceOptions
 from pulumi import export
 from pulumi_aws.iam import GetPolicyDocumentStatementArgs
 from pulumi_aws.iam import GetPolicyDocumentStatementPrincipalArgs
+from pulumi_aws.iam import RolePolicy
 from pulumi_aws.iam import get_policy_document
 from pulumi_aws_native import TagArgs
 from pulumi_aws_native import ec2
@@ -40,26 +41,20 @@ class ExistingSecurityGroupConfig(BaseModel):
     security_group_id: Output[str]
 
 
-def _dcv_license_policy(*, partition: Output[str]) -> iam.RolePolicyArgs:
+def _dcv_license_policy(*, partition: Output[str]) -> Output[str]:
     # https://docs.aws.amazon.com/dcv/latest/adminguide/setting-up-license.html
-    return iam.RolePolicyArgs(
-        policy_name="DcvLicenseAccess",
-        policy_document={
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": "s3:GetObject",
-                    "Resource": Output.concat(
-                        "arn:",
-                        partition,
-                        ":s3:::dcv-license.",
-                        get_region_output().region,
-                        "/*",
-                    ),
-                }
-            ],
-        },
+    return Output.all(partition=partition, region=get_region_output().region).apply(
+        lambda args: (
+            get_policy_document(
+                statements=[
+                    GetPolicyDocumentStatementArgs(
+                        effect="Allow",
+                        actions=["s3:GetObject"],
+                        resources=[f"arn:{args['partition']}:s3:::dcv-license.{args['region']}/*"],
+                    )
+                ]
+            ).json
+        )
     )
 
 
@@ -93,9 +88,6 @@ class Ec2WithRdp(ComponentResource):
             additional_instance_tags = []
         resource_name = f"{name}-ec2"
         partition = get_partition_output().partition
-        inline_policies: list[iam.RolePolicyArgs] | None = None
-        if enable_dcv:
-            inline_policies = [_dcv_license_policy(partition=partition)]
         self.instance_role = iam.Role(
             append_resource_suffix(resource_name),
             assume_role_policy_document=get_policy_document(
@@ -110,10 +102,16 @@ class Ec2WithRdp(ComponentResource):
                 ]
             ).json,
             managed_policy_arns=[Output.concat("arn:", partition, ":iam::aws:policy/AmazonSSMManagedInstanceCore")],
-            policies=inline_policies,
             tags=common_tags_native(),
             opts=ResourceOptions(parent=self),
         )
+        if enable_dcv:
+            _ = RolePolicy(
+                append_resource_suffix(f"{name}-dcv-license", max_length=99),
+                role=self.instance_role.role_name,
+                policy=_dcv_license_policy(partition=partition),
+                opts=ResourceOptions(parent=self.instance_role),
+            )
 
         instance_profile = iam.InstanceProfile(  # pyrefly: ignore[no-matching-overload] # role_name is typed Output[str | None] because it's optional on input, but AWS always generates one once the role exists
             append_resource_suffix(name),

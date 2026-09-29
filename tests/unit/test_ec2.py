@@ -1,6 +1,7 @@
 import base64
 import json
 import random
+import uuid
 from collections.abc import Callable
 from collections.abc import Sequence
 from enum import Enum
@@ -15,7 +16,6 @@ from faker import Faker
 from pulumi_aws.iam import GetPolicyDocumentStatementArgsDict
 from pulumi_aws_native import TagArgs
 from pulumi_aws_native import ec2
-from pulumi_aws_native.iam.outputs import RolePolicy
 from pulumi_aws_native.outputs import Tag
 from pydantic import TypeAdapter
 
@@ -44,10 +44,14 @@ class Ec2Mocks(pulumi.runtime.Mocks):
         self.captured_calls: list[pulumi.runtime.MockCallArgs] = []
         self.region = random.choice(_AWS_REGIONS)
         self.partition = random.choice(_AWS_PARTITIONS)
+        self.role_names: dict[str, str] = {}
 
     def new_resource(self, args: pulumi.runtime.MockResourceArgs) -> tuple[str, dict[str, Any]]:  # type: ignore[override] # pyright infers Optional[str] for id but str is always safe here
         self.created_resources.append(args)
         resource_id = args.resource_id if bool(args.resource_id) else f"{args.name}-id"
+        if args.typ == "aws-native:iam:Role":
+            self.role_names[args.name] = f"role-{uuid.uuid4().hex}"
+            return (resource_id, {**args.inputs, "roleName": self.role_names[args.name]})  # pyright: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
         return (resource_id, args.inputs)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
 
     def call(self, args: pulumi.runtime.MockCallArgs) -> dict[str, Any]:  # type: ignore[override] # pyright infers tuple[dict, Optional[list]] but plain dict is accepted
@@ -160,26 +164,16 @@ def _expected_ssm_managed_instance_core_arn(mocks: Ec2Mocks) -> str:
     return f"arn:{mocks.partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
 
 
-def _expected_dcv_license_policy(mocks: Ec2Mocks) -> tuple[str, dict[str, object]]:
-    return (
-        "DcvLicenseAccess",
-        {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": "s3:GetObject",
-                    "Resource": f"arn:{mocks.partition}:s3:::dcv-license.{mocks.region}/*",
-                }
-            ],
-        },
-    )
-
-
-def _inline_policies(policies: Sequence[RolePolicy] | None) -> list[tuple[str, object]]:
-    if policies is None:
-        return []
-    return [(p.policy_name, p.policy_document) for p in policies]
+def _policy_document_statements_with_actions(
+    mocks: Ec2Mocks, *, actions: list[str]
+) -> list[GetPolicyDocumentStatementArgsDict]:
+    return [
+        statement
+        for call in mocks.captured_calls
+        if call.token == "aws:iam/getPolicyDocument:getPolicyDocument"  # noqa:S105 # definitely not a password
+        for statement in _POLICY_STATEMENTS_ADAPTER.validate_python(call.args["statements"])  # pyright: ignore[reportUnknownMemberType] # MockCallArgs.args is typed as bare dict in the Pulumi SDK
+        if statement.get("actions") == actions
+    ]
 
 
 @pytest.fixture(autouse=True)
@@ -405,11 +399,9 @@ def test_When_component_created__Then_instance_role_trust_policy_allows_ec2(
     component = _new_ec2_with_rdp()
 
     def check(_: str) -> None:
-        policy_calls = [c for c in ec2_mocks.captured_calls if c.token == "aws:iam/getPolicyDocument:getPolicyDocument"]  # noqa:S105 # definitely not a password
-        assert len(policy_calls) == 1
-        statements = _POLICY_STATEMENTS_ADAPTER.validate_python(policy_calls[0].args["statements"])  # pyright: ignore[reportUnknownMemberType] # MockCallArgs.args is typed as bare dict in the Pulumi SDK
-        assert len(statements) == 1
-        stmt = statements[0]
+        trust_statements = _policy_document_statements_with_actions(ec2_mocks, actions=["sts:AssumeRole"])
+        assert len(trust_statements) == 1
+        stmt = trust_statements[0]
         assert stmt.get("effect") == "Allow"
         assert stmt.get("actions") == ["sts:AssumeRole"]
         principals = stmt.get("principals")
@@ -421,26 +413,44 @@ def test_When_component_created__Then_instance_role_trust_policy_allows_ec2(
     return component.instance_role.assume_role_policy_document.apply(check)
 
 
-@_pulumi_test
-def test_When_enable_dcv_true__Then_instance_role_has_dcv_license_policy(ec2_mocks: Ec2Mocks) -> pulumi.Output[None]:
-    component = _new_ec2_with_rdp(enable_dcv=True)
+def test_When_enable_dcv_true__Then_dcv_license_policy_attached_to_instance_role_as_separate_role_policy(
+    ec2_mocks: Ec2Mocks,
+) -> None:
+    @_pulumi_test
+    def create_component() -> None:
+        _ = _new_ec2_with_rdp(enable_dcv=True)
 
-    def check(policies: Sequence[RolePolicy] | None) -> None:
-        assert _expected_dcv_license_policy(ec2_mocks) in _inline_policies(policies)
+    create_component()
 
-    return component.instance_role.policies.apply(check)
+    roles = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:iam:Role"]
+    role_policies = [r for r in ec2_mocks.created_resources if r.typ == "aws:iam/rolePolicy:RolePolicy"]
+    dcv_statements = _policy_document_statements_with_actions(ec2_mocks, actions=["s3:GetObject"])
+
+    assert len(roles) == 1
+    assert "policies" not in roles[0].inputs  # pyright: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
+    assert len(role_policies) == 1
+    assert role_policies[0].inputs["role"] == ec2_mocks.role_names[roles[0].name]  # pyright: ignore[reportUnknownMemberType]
+    assert dcv_statements == [
+        {
+            "effect": "Allow",
+            "actions": ["s3:GetObject"],
+            "resources": [f"arn:{ec2_mocks.partition}:s3:::dcv-license.{ec2_mocks.region}/*"],
+        }
+    ]
 
 
-@_pulumi_test
-def test_When_enable_dcv_false__Then_instance_role_has_no_dcv_policy(ec2_mocks: Ec2Mocks) -> pulumi.Output[None]:
-    component = _new_ec2_with_rdp(enable_dcv=False)
+def test_When_enable_dcv_false__Then_instance_role_has_no_dcv_policy(ec2_mocks: Ec2Mocks) -> None:
+    @_pulumi_test
+    def create_component() -> None:
+        _ = _new_ec2_with_rdp(enable_dcv=False)
 
-    def check(arns: Sequence[str] | None, policies: Sequence[RolePolicy] | None) -> None:
-        # sanity check that policy attachment worked at all, so the absence check below isn't vacuous
-        assert arns is not None
-        assert _expected_ssm_managed_instance_core_arn(ec2_mocks) in arns
-        assert _expected_dcv_license_policy(ec2_mocks) not in _inline_policies(policies)
+    create_component()
 
-    return component.instance_role.managed_policy_arns.apply(
-        lambda arns: component.instance_role.policies.apply(lambda policies: check(arns, policies))
-    )
+    roles = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:iam:Role"]
+    role_policies = [r for r in ec2_mocks.created_resources if r.typ == "aws:iam/rolePolicy:RolePolicy"]
+
+    assert len(roles) == 1
+    assert roles[0].inputs["managedPolicyArns"] == [_expected_ssm_managed_instance_core_arn(ec2_mocks)]  # pyright: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
+    assert "policies" not in roles[0].inputs  # pyright: ignore[reportUnknownMemberType]
+    assert role_policies == []
+    assert _policy_document_statements_with_actions(ec2_mocks, actions=["s3:GetObject"]) == []
