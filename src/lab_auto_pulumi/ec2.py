@@ -4,6 +4,7 @@ import logging
 from ephemeral_pulumi_deploy import append_resource_suffix
 from ephemeral_pulumi_deploy import common_tags_native
 from pulumi import ComponentResource
+from pulumi import InvokeOutputOptions
 from pulumi import Output
 from pulumi import Resource
 from pulumi import ResourceOptions
@@ -13,6 +14,7 @@ from pulumi_aws.iam import GetPolicyDocumentStatementPrincipalArgs
 from pulumi_aws.iam import get_policy_document
 from pulumi_aws_native import TagArgs
 from pulumi_aws_native import ec2
+from pulumi_aws_native import get_partition_output
 from pulumi_aws_native import iam
 from pydantic import BaseModel
 from pydantic import ConfigDict
@@ -66,6 +68,7 @@ class Ec2WithRdp(ComponentResource):
         if additional_instance_tags is None:
             additional_instance_tags = []
         resource_name = f"{name}-ec2"
+        partition = get_partition_output(opts=InvokeOutputOptions(parent=self)).partition
         self.instance_role = iam.Role(
             append_resource_suffix(resource_name),
             assume_role_policy_document=get_policy_document(
@@ -79,7 +82,7 @@ class Ec2WithRdp(ComponentResource):
                     )
                 ]
             ).json,
-            managed_policy_arns=["arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"],
+            managed_policy_arns=[Output.concat("arn:", partition, ":iam::aws:policy/AmazonSSMManagedInstanceCore")],
             tags=common_tags_native(),
             opts=ResourceOptions(parent=self),
         )
