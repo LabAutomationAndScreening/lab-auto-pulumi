@@ -124,6 +124,7 @@ class Ec2WithRdp(ComponentResource):
                     )
                 resource_safe_description = create_resource_name_safe_str(description)
 
+                # TODO: rules whose descriptions sanitize to the same string (e.g. TCP and UDP both described "DCV", or "Allow RDP" vs "allow rdp") get the same resource name and fail deployment with a duplicate URN; validate uniqueness up front with a clear ValueError, or include protocol/ports in the name (with aliases to avoid replacing existing rules)
                 _ = ec2.SecurityGroupIngress(
                     append_resource_suffix(f"{name}-ingress-{resource_safe_description}", max_length=190),
                     opts=ResourceOptions(
@@ -132,6 +133,7 @@ class Ec2WithRdp(ComponentResource):
                     ip_protocol=rule_args.ip_protocol,
                     from_port=rule_args.from_port,
                     to_port=rule_args.to_port,
+                    # TODO: only source_security_group_id is forwarded; cidr_ip, cidr_ipv6 and source_prefix_list_id on the rule are silently dropped, so a CIDR-based rule deploys without a source
                     source_security_group_id=rule_args.source_security_group_id,
                     group_id=self.security_group.id,
                     description=rule_args.description,
@@ -161,6 +163,7 @@ class Ec2WithRdp(ComponentResource):
                 )
             ],
             iam_instance_profile=instance_profile.instance_profile_name,
+            # TODO: if additional_instance_tags also contains a "Name" tag, the instance gets two Name tags; decide whether the caller's value should replace the default or be rejected with a clear ValueError
             tags=[TagArgs(key="Name", value=name), *additional_instance_tags, *common_tags_native()],
             user_data=None
             if user_data is None
