@@ -1,6 +1,7 @@
 import base64
 import json
 import random
+import uuid
 from collections.abc import Callable
 from collections.abc import Sequence
 from enum import Enum
@@ -42,11 +43,16 @@ class Ec2Mocks(pulumi.runtime.Mocks):
         self.faker = faker
         self.created_resources: list[pulumi.runtime.MockResourceArgs] = []
         self.captured_calls: list[pulumi.runtime.MockCallArgs] = []
+        self.region = random.choice(_AWS_REGIONS)
         self.partition = random.choice(["aws", "aws-cn", "aws-us-gov"])
+        self.role_names: dict[str, str] = {}
 
     def new_resource(self, args: pulumi.runtime.MockResourceArgs) -> tuple[str, dict[str, Any]]:  # type: ignore[override] # pyright infers Optional[str] for id but str is always safe here
         self.created_resources.append(args)
         resource_id = args.resource_id if bool(args.resource_id) else f"{args.name}-id"
+        if args.typ == "aws-native:iam:Role":
+            self.role_names[args.name] = f"role-{uuid.uuid4().hex}"
+            return (resource_id, {**args.inputs, "roleName": self.role_names[args.name]})  # pyright: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
         return (resource_id, args.inputs)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
 
     def call(self, args: pulumi.runtime.MockCallArgs) -> dict[str, Any]:  # type: ignore[override] # pyright infers tuple[dict, Optional[list]] but plain dict is accepted
@@ -66,6 +72,8 @@ class Ec2Mocks(pulumi.runtime.Mocks):
                     }
                 )
             }
+        if args.token == "aws-native:index:getRegion":  # noqa:S105 # definitely not a password
+            return {"region": self.region}
         if args.token == "aws-native:index:getPartition":  # noqa:S105 # definitely not a password
             return {"partition": self.partition}
         return {}
@@ -82,6 +90,7 @@ def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more rea
     user_data: pulumi.Output[str] | _Unset | None = _Unset.TOKEN,
     additional_instance_tags: list[TagArgs] | _Unset | None = _Unset.TOKEN,
     instance_ignore_changes: list[str] | _Unset | None = _Unset.TOKEN,
+    grant_dcv_license_access: bool | _Unset = _Unset.TOKEN,
     parent: pulumi.Resource | _Unset | None = _Unset.TOKEN,
 ) -> Ec2WithRdp:
     with (
@@ -110,6 +119,7 @@ def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more rea
                     [None, random.sample(["imageId", "tags", "userData"], k=random.randint(0, 2))]
                 ),
             ),
+            grant_dcv_license_access=_or_random(grant_dcv_license_access, factory=lambda: random.choice([True, False])),
             parent=_or_random(parent, factory=lambda: _random_parent(faker)),
         )
 
@@ -170,6 +180,18 @@ def _run_pulumi_program(program: Callable[[], object]) -> None:
     state from inside an `apply` can run before those resources have been registered.
     """
     _ = _pulumi_test(program)()
+
+
+def _policy_document_statements_with_actions(
+    mocks: Ec2Mocks, *, actions: list[str]
+) -> list[GetPolicyDocumentStatementArgsDict]:
+    return [
+        statement
+        for call in mocks.captured_calls
+        if call.token == "aws:iam/getPolicyDocument:getPolicyDocument"  # noqa:S105 # definitely not a password
+        for statement in _POLICY_STATEMENTS_ADAPTER.validate_python(call.args["statements"])  # pyright: ignore[reportUnknownMemberType] # MockCallArgs.args is typed as bare dict in the Pulumi SDK
+        if statement.get("actions") == actions
+    ]
 
 
 @pytest.fixture(autouse=True)
@@ -403,14 +425,14 @@ def test_When_component_created__Then_instance_role_has_ssm_managed_policy_in_re
 def test_When_component_created__Then_instance_role_trust_policy_allows_ec2(
     ec2_mocks: Ec2Mocks, faker: Faker
 ) -> pulumi.Output[None]:
-    component = _new_ec2_with_rdp(faker=faker)
+    component = _new_ec2_with_rdp(
+        faker=faker,
+    )
 
     def check(_: str) -> None:
-        policy_calls = [c for c in ec2_mocks.captured_calls if c.token == "aws:iam/getPolicyDocument:getPolicyDocument"]  # noqa:S105 # definitely not a password
-        assert len(policy_calls) == 1
-        statements = _POLICY_STATEMENTS_ADAPTER.validate_python(policy_calls[0].args["statements"])  # pyright: ignore[reportUnknownMemberType] # MockCallArgs.args is typed as bare dict in the Pulumi SDK
-        assert len(statements) == 1
-        stmt = statements[0]
+        trust_statements = _policy_document_statements_with_actions(ec2_mocks, actions=["sts:AssumeRole"])
+        assert len(trust_statements) == 1
+        stmt = trust_statements[0]
         assert stmt.get("effect") == "Allow"
         assert stmt.get("actions") == ["sts:AssumeRole"]
         principals = stmt.get("principals")
@@ -422,7 +444,44 @@ def test_When_component_created__Then_instance_role_trust_policy_allows_ec2(
     return component.instance_role.assume_role_policy_document.apply(check)
 
 
-def test_Given_parent_with_aws_native_provider__When_component_created__Then_partition_invoke_uses_parent_provider(
+def test_When_grant_dcv_license_access_true__Then_dcv_license_policy_attached_to_instance_role_as_separate_role_policy(
+    ec2_mocks: Ec2Mocks, faker: Faker
+) -> None:
+    _run_pulumi_program(lambda: _new_ec2_with_rdp(faker=faker, grant_dcv_license_access=True))
+
+    roles = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:iam:Role"]
+    role_policies = [r for r in ec2_mocks.created_resources if r.typ == "aws:iam/rolePolicy:RolePolicy"]
+    dcv_statements = _policy_document_statements_with_actions(ec2_mocks, actions=["s3:GetObject"])
+
+    assert len(roles) == 1
+    assert "policies" not in roles[0].inputs  # pyright: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
+    assert len(role_policies) == 1
+    assert role_policies[0].inputs["role"] == ec2_mocks.role_names[roles[0].name]  # pyright: ignore[reportUnknownMemberType]
+    assert dcv_statements == [
+        {
+            "effect": "Allow",
+            "actions": ["s3:GetObject"],
+            "resources": [f"arn:{ec2_mocks.partition}:s3:::dcv-license.{ec2_mocks.region}/*"],
+        }
+    ]
+
+
+def test_When_grant_dcv_license_access_false__Then_instance_role_has_no_dcv_policy(
+    ec2_mocks: Ec2Mocks, faker: Faker
+) -> None:
+    _run_pulumi_program(lambda: _new_ec2_with_rdp(faker=faker, grant_dcv_license_access=False))
+
+    roles = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:iam:Role"]
+    role_policies = [r for r in ec2_mocks.created_resources if r.typ == "aws:iam/rolePolicy:RolePolicy"]
+
+    assert len(roles) == 1
+    assert roles[0].inputs["managedPolicyArns"] == [_expected_ssm_managed_instance_core_arn(ec2_mocks)]  # pyright: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
+    assert "policies" not in roles[0].inputs  # pyright: ignore[reportUnknownMemberType]
+    assert role_policies == []
+    assert _policy_document_statements_with_actions(ec2_mocks, actions=["s3:GetObject"]) == []
+
+
+def test_Given_parent_with_aws_native_provider__When_grant_dcv_license_access_true__Then_partition_and_region_invokes_use_parent_provider(
     ec2_mocks: Ec2Mocks, faker: Faker
 ) -> None:
     expected_provider_refs: list[str] = []
@@ -432,13 +491,17 @@ def test_Given_parent_with_aws_native_provider__When_component_created__Then_par
         parent = pulumi.ComponentResource(
             "test:index:Parent", faker.slug(), opts=pulumi.ResourceOptions(providers=[provider])
         )
-        _ = _new_ec2_with_rdp(faker=faker, parent=parent)
+        _ = _new_ec2_with_rdp(faker=faker, grant_dcv_license_access=True, parent=parent)
         return pulumi.Output.concat(provider.urn, "::", provider.id).apply(expected_provider_refs.append)
 
     _run_pulumi_program(create_component)
 
-    invokes = [c for c in ec2_mocks.captured_calls if c.token == "aws-native:index:getPartition"]  # noqa:S105 # definitely not a password
+    invokes = [
+        c
+        for c in ec2_mocks.captured_calls
+        if c.token in ("aws-native:index:getPartition", "aws-native:index:getRegion")
+    ]
 
-    assert len(invokes) == 1
+    assert sorted(c.token for c in invokes) == ["aws-native:index:getPartition", "aws-native:index:getRegion"]
     assert len(expected_provider_refs) == 1
-    assert invokes[0].provider == expected_provider_refs[0]
+    assert [c.provider for c in invokes] == [expected_provider_refs[0], expected_provider_refs[0]]
