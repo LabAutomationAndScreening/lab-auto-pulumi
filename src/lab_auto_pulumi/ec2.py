@@ -11,7 +11,6 @@ from pulumi import ResourceOptions
 from pulumi import export
 from pulumi_aws.iam import GetPolicyDocumentStatementArgs
 from pulumi_aws.iam import GetPolicyDocumentStatementPrincipalArgs
-from pulumi_aws.iam import RolePolicy
 from pulumi_aws.iam import get_policy_document
 from pulumi_aws_native import TagArgs
 from pulumi_aws_native import ec2
@@ -42,22 +41,25 @@ class ExistingSecurityGroupConfig(BaseModel):
     security_group_id: Output[str]
 
 
-def _dcv_license_policy(*, partition: Output[str], parent: Resource) -> Output[str]:
+type _PolicyStatement = dict[str, str | list[str]]
+type _PolicyDocument = dict[str, str | list[_PolicyStatement]]
+
+
+def _dcv_license_policy(*, partition: Output[str], parent: Resource) -> Output[_PolicyDocument]:
     # https://docs.aws.amazon.com/dcv/latest/adminguide/setting-up-license.html
     return Output.all(
         partition=partition, region=get_region_output(opts=InvokeOutputOptions(parent=parent)).region
     ).apply(
-        lambda args: (
-            get_policy_document(
-                statements=[
-                    GetPolicyDocumentStatementArgs(
-                        effect="Allow",
-                        actions=["s3:GetObject"],
-                        resources=[f"arn:{args['partition']}:s3:::dcv-license.{args['region']}/*"],
-                    )
-                ]
-            ).json
-        )
+        lambda args: {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": ["s3:GetObject"],
+                    "Resource": [f"arn:{args['partition']}:s3:::dcv-license.{args['region']}/*"],
+                }
+            ],
+        }
     )
 
 
@@ -109,10 +111,10 @@ class Ec2WithRdp(ComponentResource):
             opts=ResourceOptions(parent=self),
         )
         if grant_dcv_license_access:
-            _ = RolePolicy(
+            _ = iam.RolePolicy(
                 append_resource_suffix(f"{name}-dcv-license", max_length=99),
-                role=self.instance_role.role_name,
-                policy=_dcv_license_policy(partition=partition, parent=self),
+                role_name=self.instance_role.role_name,
+                policy_document=_dcv_license_policy(partition=partition, parent=self),
                 opts=ResourceOptions(parent=self.instance_role),
             )
 

@@ -171,6 +171,24 @@ def _expected_ssm_managed_instance_core_arn(mocks: Ec2Mocks) -> str:
     return f"arn:{mocks.partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
 
 
+def _dcv_role_policies(mocks: Ec2Mocks) -> list[pulumi.runtime.MockResourceArgs]:
+    expected_document = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": ["s3:GetObject"],
+                "Resource": [f"arn:{mocks.partition}:s3:::dcv-license.{mocks.region}/*"],
+            }
+        ],
+    }
+    return [
+        r
+        for r in mocks.created_resources
+        if r.typ == "aws-native:iam:RolePolicy" and r.inputs.get("policyDocument") == expected_document  # pyright: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
+    ]
+
+
 def _run_pulumi_program(program: Callable[[], object]) -> None:
     """Run a Pulumi program under the mocks and return once every resource registration has completed.
 
@@ -195,14 +213,6 @@ def _policy_document_statements_with_actions(
     mocks: Ec2Mocks, *, actions: list[str]
 ) -> list[GetPolicyDocumentStatementArgsDict]:
     return [statement for statement in _policy_document_statements(mocks) if statement.get("actions") == actions]
-
-
-def _dcv_license_statements(mocks: Ec2Mocks) -> list[GetPolicyDocumentStatementArgsDict]:
-    return [
-        statement
-        for statement in _policy_document_statements(mocks)
-        if any(":s3:::dcv-license." in resource for resource in statement.get("resources", []))
-    ]
 
 
 @pytest.fixture(autouse=True)
@@ -461,22 +471,10 @@ def test_When_grant_dcv_license_access_true__Then_dcv_license_policy_attached_to
     _run_pulumi_program(lambda: _new_ec2_with_rdp(faker=faker, grant_dcv_license_access=True))
 
     roles = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:iam:Role"]
-    # TODO: find the DCV RolePolicy by what it grants rather than by its resource name; the getPolicyDocument mock returns a fixed document, so the attached policy's content can't identify it yet
-    dcv_role_policies = [
-        r for r in ec2_mocks.created_resources if r.typ == "aws:iam/rolePolicy:RolePolicy" and "-dcv-license" in r.name
-    ]
 
     assert len(roles) == 1
     assert "policies" not in roles[0].inputs  # pyright: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
-    assert len(dcv_role_policies) == 1
-    assert dcv_role_policies[0].inputs["role"] == ec2_mocks.role_names[roles[0].name]  # pyright: ignore[reportUnknownMemberType]
-    assert _dcv_license_statements(ec2_mocks) == [
-        {
-            "effect": "Allow",
-            "actions": ["s3:GetObject"],
-            "resources": [f"arn:{ec2_mocks.partition}:s3:::dcv-license.{ec2_mocks.region}/*"],
-        }
-    ]
+    assert [r.inputs["roleName"] for r in _dcv_role_policies(ec2_mocks)] == [ec2_mocks.role_names[roles[0].name]]  # pyright: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
 
 
 def test_When_grant_dcv_license_access_false__Then_instance_role_has_no_dcv_policy(
@@ -490,10 +488,10 @@ def test_When_grant_dcv_license_access_false__Then_instance_role_has_no_dcv_poli
     assert len(roles) == 1
     assert roles[0].inputs["managedPolicyArns"] == [_expected_ssm_managed_instance_core_arn(ec2_mocks)]  # pyright: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
 
-    assert _dcv_license_statements(ec2_mocks) == []
+    assert _dcv_role_policies(ec2_mocks) == []
 
 
-def test_Given_parent_with_aws_native_provider__When_grant_dcv_license_access_true__Then_partition_and_region_invokes_use_parent_provider(
+def test_Given_parent_with_aws_native_provider__When_grant_dcv_license_access_true__Then_dcv_role_policy_and_invokes_use_parent_provider(
     ec2_mocks: Ec2Mocks, faker: Faker
 ) -> None:
     expected_provider_refs: list[str] = []
@@ -517,3 +515,4 @@ def test_Given_parent_with_aws_native_provider__When_grant_dcv_license_access_tr
     assert sorted(c.token for c in invokes) == ["aws-native:index:getPartition", "aws-native:index:getRegion"]
     assert len(expected_provider_refs) == 1
     assert [c.provider for c in invokes] == [expected_provider_refs[0], expected_provider_refs[0]]
+    assert [r.provider for r in _dcv_role_policies(ec2_mocks)] == [expected_provider_refs[0]]
