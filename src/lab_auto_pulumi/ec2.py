@@ -1,7 +1,9 @@
 import base64
 import logging
+from typing import Self
 
 from ephemeral_pulumi_deploy import append_resource_suffix
+from ephemeral_pulumi_deploy import common_tags
 from ephemeral_pulumi_deploy import common_tags_native
 from pulumi import ComponentResource
 from pulumi import InvokeOutputOptions
@@ -9,6 +11,7 @@ from pulumi import Output
 from pulumi import Resource
 from pulumi import ResourceOptions
 from pulumi import export
+from pulumi_aws import vpc
 from pulumi_aws.iam import GetPolicyDocumentStatementArgs
 from pulumi_aws.iam import GetPolicyDocumentStatementPrincipalArgs
 from pulumi_aws.iam import get_policy_document
@@ -19,6 +22,8 @@ from pulumi_aws_native import get_region_output
 from pulumi_aws_native import iam
 from pydantic import BaseModel
 from pydantic import ConfigDict
+from pydantic import Field
+from pydantic import model_validator
 
 from .constants import CENTRAL_NETWORKING_SSM_PREFIX
 from .lib import get_org_managed_ssm_param_value
@@ -26,11 +31,36 @@ from .lib import get_org_managed_ssm_param_value
 logger = logging.getLogger(__name__)
 
 
+class SecurityGroupIngressRuleConfig(BaseModel):
+    """One inbound rule on the instance's security group, backed by the classic `aws.vpc.SecurityGroupIngressRule`.
+
+    Exactly one of `source_security_group_id` or `cidr_ipv4` must be set. The classic resource is used instead of
+    the aws-native (CloudFormation) one because CloudFormation silently adopts an existing identical rule on create,
+    which lets two Pulumi resources own one AWS rule; the classic provider fails loudly on duplicates instead.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    description: str = Field(min_length=1)
+    ip_protocol: str = "tcp"
+    from_port: int
+    to_port: int
+    source_security_group_id: Output[str] | str | None = None
+    cidr_ipv4: str | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one_source(self) -> Self:
+        if (self.source_security_group_id is None) == (self.cidr_ipv4 is None):
+            raise ValueError("exactly one of source_security_group_id or cidr_ipv4 must be set")  # noqa: TRY003 # pydantic surfaces the message directly to the caller
+        return self
+
+
 class NewSecurityGroupConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     central_networking_vpc_name: str
     description: str = "Allow all outbound traffic for SSM access"
+    ingress_rules: list[SecurityGroupIngressRuleConfig] = []
 
 
 class ExistingSecurityGroupConfig(BaseModel):
@@ -143,7 +173,35 @@ class Ec2WithRdp(ComponentResource):
                         "groupName",
                         "vpcId",
                     ],
+                    # `pulumi refresh` on the aws-native SecurityGroup projects every live rule into these inputs, and
+                    # the next `up` then sends a remove patch that revokes the whole group. Rules are managed only
+                    # through the standalone resources below, so never let these inputs drift.
+                    ignore_changes=["securityGroupIngress", "securityGroupEgress"],
                 ),
+            )
+            for idx, rule in enumerate(security_group_config.ingress_rules):
+                _ = vpc.SecurityGroupIngressRule(
+                    append_resource_suffix(
+                        f"{name}-in-{rule.ip_protocol}-{rule.from_port}-{rule.to_port}-{idx}", max_length=190
+                    ),
+                    security_group_id=self.security_group.id,
+                    description=rule.description,
+                    ip_protocol=rule.ip_protocol,
+                    from_port=rule.from_port,
+                    to_port=rule.to_port,
+                    referenced_security_group_id=rule.source_security_group_id,
+                    cidr_ipv4=rule.cidr_ipv4,
+                    tags=common_tags(),
+                    opts=ResourceOptions(parent=self.security_group),
+                )
+            _ = vpc.SecurityGroupEgressRule(  # TODO: see if this can be further restricted
+                append_resource_suffix(f"{name}-out-all", max_length=190),
+                security_group_id=self.security_group.id,
+                description="Allow all outbound traffic",
+                ip_protocol="-1",
+                cidr_ipv4="0.0.0.0/0",
+                tags=common_tags(),
+                opts=ResourceOptions(parent=self.security_group),
             )
             resolved_security_group_id = self.security_group.id
         self.instance = ec2.Instance(
