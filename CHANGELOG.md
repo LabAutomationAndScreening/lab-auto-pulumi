@@ -27,6 +27,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Describe security fixes or improvements.
 
 ---
+## [0.4.0] - 2026-09-30
+
+### Removed
+- `Ec2WithRdp` no longer creates any `aws-native` `SecurityGroupIngress`/`SecurityGroupEgress` resources, and
+  `NewSecurityGroupConfig.ingress_rules` is gone. The CloudFormation-backed rule resources silently adopt an
+  existing identical rule instead of failing, so two Pulumi resources end up owning one AWS rule and deleting
+  either one revokes it. This release is the transitional "no rules" step; the next release re-adds rules on
+  the classic `aws.vpc.SecurityGroupIngressRule`/`SecurityGroupEgressRule` resources.
+
+---
 ## [0.2.3] - 2026-05-05
 
 ### Added
