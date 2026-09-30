@@ -27,6 +27,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Describe security fixes or improvements.
 
 ---
+## [0.5.0] - 2026-09-30
+
+### Added
+- `SecurityGroupIngressRuleConfig` and `NewSecurityGroupConfig.ingress_rules`: `Ec2WithRdp` creates inbound rules
+  on the classic `aws.vpc.SecurityGroupIngressRule` resource (one of `source_security_group_id` or `cidr_ipv4`,
+  description required). The egress-all rule is back on `aws.vpc.SecurityGroupEgressRule`.
+
+### Changed
+- The aws-native `SecurityGroup` now ignores changes to `securityGroupIngress`/`securityGroupEgress` so a refresh can
+  never project live rules into inputs and wipe the group on the next update.
+
+---
 ## [0.4.0] - 2026-09-30
 
 ### Removed
