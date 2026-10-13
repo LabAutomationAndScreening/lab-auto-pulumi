@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from enum import Enum
 from enum import auto
 from typing import Any
+from typing import Literal
 from unittest import mock
 
 import pulumi
@@ -322,7 +323,7 @@ class TestNewSecurityGroupConfig:
     def test_When_new_sg_with_source_sg_ingress_rule__Then_classic_ingress_rule_created_with_that_source(
         self, ec2_mocks: Ec2Mocks, faker: Faker
     ) -> None:
-        ip_protocol = random.choice(["tcp", "udp"])
+        ip_protocol: Literal["tcp", "udp"] = random.choice(["tcp", "udp"])
         from_port = random.randint(1, 30000)
         to_port = random.randint(from_port, 65535)
         source_sg_id = f"sg-{faker.hexify('^^^^^^^^')}"
@@ -417,6 +418,16 @@ class TestNewSecurityGroupConfig:
         with pytest.raises(ValidationError, match="description"):
             _ = SecurityGroupIngressRuleConfig(
                 description="", from_port=3389, to_port=3389, source_security_group_id=f"sg-{faker.hexify('^^^^^^^^')}"
+            )
+
+    def test_When_ingress_rule_uses_all_protocols__Then_raises_validation_error(self, faker: Faker) -> None:
+        with pytest.raises(ValidationError, match="ip_protocol"):
+            _ = SecurityGroupIngressRuleConfig(
+                description=faker.sentence(),
+                ip_protocol="-1",  # pyright: ignore[reportArgumentType] # pyrefly: ignore[bad-argument-type] # deliberately invalid to exercise validation
+                from_port=3389,
+                to_port=3389,
+                source_security_group_id=f"sg-{faker.hexify('^^^^^^^^')}",
             )
 
     def test_When_ingress_rule_has_no_source__Then_raises_validation_error(self, faker: Faker) -> None:

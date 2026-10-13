@@ -31,8 +31,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 - `SecurityGroupIngressRuleConfig` and `NewSecurityGroupConfig.ingress_rules`: `Ec2WithRdp` creates inbound rules
-  on the classic `aws.vpc.SecurityGroupIngressRule` resource (one of `source_security_group_id` or `cidr_ipv4`,
-  description required). The egress-all rule is back on `aws.vpc.SecurityGroupEgressRule`.
+  on the classic `aws.vpc.SecurityGroupIngressRule` resource (`tcp` or `udp`, one of `source_security_group_id` or
+  `cidr_ipv4`, description required). The egress-all rule is back on `aws.vpc.SecurityGroupEgressRule`.
 
 ### Changed
 - The aws-native `SecurityGroup` now ignores changes to `securityGroupIngress`/`securityGroupEgress` so a refresh can

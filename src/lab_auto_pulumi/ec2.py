@@ -1,5 +1,6 @@
 import base64
 import logging
+from typing import Literal
 from typing import Self
 
 from ephemeral_pulumi_deploy import append_resource_suffix
@@ -42,7 +43,7 @@ class SecurityGroupIngressRuleConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     description: str = Field(min_length=1)
-    ip_protocol: str = "tcp"
+    ip_protocol: Literal["tcp", "udp"] = "tcp"
     from_port: int
     to_port: int
     source_security_group_id: Output[str] | str | None = None
