@@ -36,6 +36,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   either one revokes it. This release is the transitional "no rules" step; the next release re-adds rules on
   the classic `aws.vpc.SecurityGroupIngressRule`/`SecurityGroupEgressRule` resources.
 
+> [!WARNING]
+> Stacks deployed with a version before 0.4.0 must deploy 0.4.0 before upgrading to any newer version. Skipping
+> it fails the upgrade: the new rule resources collide with the still-existing `aws-native` rules.
+>
+> Deploying this release deletes the security group rules `Ec2WithRdp` previously managed (the configured ingress
+> rules and the egress-all rule), which interrupts RDP and SSM access to the instance. Deploy this release first, deploy, bump to any version after this one and deploy again to restore connectivity. Do not create identical replacement rules before upgrading: the `aws-native` rule deletion revokes the
+> matching AWS rule, removing your replacement along with it.
+
 ---
 ## [0.2.3] - 2026-05-05
 
