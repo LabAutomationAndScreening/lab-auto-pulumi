@@ -420,11 +420,11 @@ class TestNewSecurityGroupConfig:
             )
 
     def test_When_ingress_rule_has_no_source__Then_raises_validation_error(self, faker: Faker) -> None:
-        with pytest.raises(ValidationError, match="exactly one of"):
+        with pytest.raises(ValidationError, match="neither source_security_group_id nor cidr_ipv4 is set"):
             _ = SecurityGroupIngressRuleConfig(description=faker.sentence(), from_port=3389, to_port=3389)
 
     def test_When_ingress_rule_has_both_sources__Then_raises_validation_error(self, faker: Faker) -> None:
-        with pytest.raises(ValidationError, match="exactly one of"):
+        with pytest.raises(ValidationError, match="both source_security_group_id and cidr_ipv4 are set"):
             _ = SecurityGroupIngressRuleConfig(
                 description=faker.sentence(),
                 from_port=3389,

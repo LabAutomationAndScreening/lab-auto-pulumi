@@ -50,8 +50,10 @@ class SecurityGroupIngressRuleConfig(BaseModel):
 
     @model_validator(mode="after")
     def _exactly_one_source(self) -> Self:
-        if (self.source_security_group_id is None) == (self.cidr_ipv4 is None):
-            raise ValueError("exactly one of source_security_group_id or cidr_ipv4 must be set")  # noqa: TRY003 # pydantic surfaces the message directly to the caller
+        if self.source_security_group_id is None and self.cidr_ipv4 is None:
+            raise ValueError("neither source_security_group_id nor cidr_ipv4 is set; exactly one is required")  # noqa: TRY003 # pydantic surfaces the message directly to the caller
+        if self.source_security_group_id is not None and self.cidr_ipv4 is not None:
+            raise ValueError("both source_security_group_id and cidr_ipv4 are set; exactly one is allowed")  # noqa: TRY003 # pydantic surfaces the message directly to the caller
         return self
 
 
