@@ -32,6 +32,7 @@ _pulumi_test = pulumi.runtime.test  # pyright: ignore[reportUnknownMemberType, r
 
 _CLASSIC_INGRESS_RULE_TYPE = "aws:vpc/securityGroupIngressRule:SecurityGroupIngressRule"
 _CLASSIC_EGRESS_RULE_TYPE = "aws:vpc/securityGroupEgressRule:SecurityGroupEgressRule"
+_CLASSIC_SECURITY_GROUP_TYPE = "aws:ec2/securityGroup:SecurityGroup"
 
 _EC2_INSTANCE_TYPES = ["t3.micro", "t3.large", "m5.xlarge", "c5.2xlarge"]
 _AWS_REGIONS = ["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-2"]
@@ -282,7 +283,7 @@ class TestNewSecurityGroupConfig:
 
         return component.security_group.vpc_id.apply(check)
 
-    def test_When_new_sg_config__Then_no_aws_native_security_group_rule_resources_created(
+    def test_When_new_sg_config__Then_security_group_and_rules_are_classic_resources_only(
         self, ec2_mocks: Ec2Mocks, faker: Faker
     ) -> None:
         _run_pulumi_program(
@@ -294,15 +295,20 @@ class TestNewSecurityGroupConfig:
             )
         )
 
-        security_groups = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroup"]
-        rules = [
+        classic_security_groups = [r for r in ec2_mocks.created_resources if r.typ == _CLASSIC_SECURITY_GROUP_TYPE]
+        native_sg_resources = [
             r
             for r in ec2_mocks.created_resources
-            if r.typ in ("aws-native:ec2:SecurityGroupIngress", "aws-native:ec2:SecurityGroupEgress")
+            if r.typ
+            in (
+                "aws-native:ec2:SecurityGroup",
+                "aws-native:ec2:SecurityGroupIngress",
+                "aws-native:ec2:SecurityGroupEgress",
+            )
         ]
 
-        assert len(security_groups) == 1
-        assert [r.name for r in rules] == []
+        assert len(classic_security_groups) == 1
+        assert [r.typ for r in native_sg_resources] == []
 
     def test_When_new_sg_config__Then_classic_egress_all_rule_created(self, ec2_mocks: Ec2Mocks, faker: Faker) -> None:
         _run_pulumi_program(
@@ -312,7 +318,7 @@ class TestNewSecurityGroupConfig:
         )
 
         egress = [r for r in ec2_mocks.created_resources if r.typ == _CLASSIC_EGRESS_RULE_TYPE]
-        security_groups = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroup"]
+        security_groups = [r for r in ec2_mocks.created_resources if r.typ == _CLASSIC_SECURITY_GROUP_TYPE]
 
         assert len(security_groups) == 1
         assert len(egress) == 1
@@ -348,7 +354,7 @@ class TestNewSecurityGroupConfig:
         )
 
         ingress = [r for r in ec2_mocks.created_resources if r.typ == _CLASSIC_INGRESS_RULE_TYPE]
-        security_groups = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroup"]
+        security_groups = [r for r in ec2_mocks.created_resources if r.typ == _CLASSIC_SECURITY_GROUP_TYPE]
 
         assert len(ingress) == 1
         assert ingress[0].inputs.get("ipProtocol") == ip_protocol  # pyright: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]

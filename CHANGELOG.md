@@ -35,8 +35,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `cidr_ipv4`, description required). The egress-all rule is back on `aws.vpc.SecurityGroupEgressRule`.
 
 ### Changed
-- The aws-native `SecurityGroup` now ignores changes to `securityGroupIngress`/`securityGroupEgress` so a refresh can
-  never project live rules into inputs and wipe the group on the next update.
+- A new security group (`NewSecurityGroupConfig`) is now the classic `aws.ec2.SecurityGroup` instead of the aws-native
+  one. The classic resource revokes AWS's default allow-all egress rule on create, so the standalone egress-all rule
+  no longer collides with it (`InvalidPermission.Duplicate`). It ignores changes to its inline `ingress`/`egress` so
+  rules stay owned by the standalone resources. `Ec2WithRdp.security_group` is therefore the classic type for new
+  groups; it stays the aws-native type for `ExistingSecurityGroupConfig`.
+
+> [!WARNING]
+> Upgrading replaces the security group created by `Ec2WithRdp`: Pulumi creates the new group, moves the instance
+> to it in place, then deletes the old one. Anything outside the stack that references the old group's ID (rules in
+> other security groups, other stacks) must be updated, or the old group's deletion fails while it is still in use.
 
 ---
 ## [0.4.0] - 2026-09-30

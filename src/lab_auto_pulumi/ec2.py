@@ -12,6 +12,7 @@ from pulumi import Output
 from pulumi import Resource
 from pulumi import ResourceOptions
 from pulumi import export
+from pulumi_aws import ec2 as classic_ec2
 from pulumi_aws import vpc
 from pulumi_aws.iam import GetPolicyDocumentStatementArgs
 from pulumi_aws.iam import GetPolicyDocumentStatementPrincipalArgs
@@ -162,24 +163,20 @@ class Ec2WithRdp(ComponentResource):
             )
             resolved_security_group_id = self.security_group.id
         else:
-            self.security_group = ec2.SecurityGroup(
+            # The classic SecurityGroup revokes AWS's default allow-all egress rule on create. The aws-native one keeps
+            # it, so the standalone egress rule below would fail as a duplicate.
+            self.security_group = classic_ec2.SecurityGroup(
                 append_resource_suffix(name),
                 vpc_id=get_org_managed_ssm_param_value(
                     f"{CENTRAL_NETWORKING_SSM_PREFIX}/vpcs/{security_group_config.central_networking_vpc_name}/id"
                 ),
-                group_description=security_group_config.description,
-                tags=[TagArgs(key="Name", value=name), *common_tags_native()],
+                description=security_group_config.description,
+                tags={"Name": name, **common_tags()},
                 opts=ResourceOptions(
                     parent=self,
-                    replace_on_changes=[  # these are immutable  https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-securitygroup.html
-                        "groupDescription",
-                        "groupName",
-                        "vpcId",
-                    ],
-                    # `pulumi refresh` on the aws-native SecurityGroup projects every live rule into these inputs, and
-                    # the next `up` then sends a remove patch that revokes the whole group. Rules are managed only
-                    # through the standalone resources below, so never let these inputs drift.
-                    ignore_changes=["securityGroupIngress", "securityGroupEgress"],
+                    # Rules are managed only through the standalone resources below; inline rules on the group would
+                    # fight them for ownership.
+                    ignore_changes=["ingress", "egress"],
                 ),
             )
             for idx, rule in enumerate(security_group_config.ingress_rules):
