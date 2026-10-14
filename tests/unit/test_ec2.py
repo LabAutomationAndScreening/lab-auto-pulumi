@@ -227,6 +227,10 @@ def _policy_document_statements_with_actions(
 @pytest.fixture(autouse=True)
 def ec2_mocks(faker: Faker) -> Ec2Mocks:
     mocks = Ec2Mocks(faker=faker)
+    # set_mocks only creates the root Stack when none exists, registering it on the current test's event loop. A test
+    # that never runs its loop (e.g. pure config validation) would leave that root unresolved on a closed loop, and
+    # every later test awaiting the root's URN would fail. Clear it so each test registers its own.
+    pulumi.runtime.reset_options()
     pulumi.runtime.set_mocks(mocks, project="test-project", stack="test-stack")
     return mocks
 
