@@ -162,6 +162,7 @@ class Ec2WithRdp(ComponentResource):
                 opts=ResourceOptions(parent=self),
             )
             resolved_security_group_id = self.security_group.id
+            instance_depends_on: list[Resource] = []
         else:
             # The classic SecurityGroup revokes AWS's default allow-all egress rule on create. The aws-native one keeps
             # it, so the standalone egress rule below would fail as a duplicate.
@@ -179,8 +180,9 @@ class Ec2WithRdp(ComponentResource):
                     ignore_changes=["ingress", "egress"],
                 ),
             )
+            ingress_rules: list[Resource] = []
             for idx, rule in enumerate(security_group_config.ingress_rules):
-                _ = vpc.SecurityGroupIngressRule(
+                ingress_rule = vpc.SecurityGroupIngressRule(
                     append_resource_suffix(
                         f"{name}-in-{rule.ip_protocol}-{rule.from_port}-{rule.to_port}-{idx}", max_length=190
                     ),
@@ -194,7 +196,8 @@ class Ec2WithRdp(ComponentResource):
                     tags=common_tags(),
                     opts=ResourceOptions(parent=self.security_group),
                 )
-            _ = vpc.SecurityGroupEgressRule(  # TODO: see if this can be further restricted
+                ingress_rules.append(ingress_rule)
+            egress_all = vpc.SecurityGroupEgressRule(  # TODO: see if this can be further restricted
                 append_resource_suffix(f"{name}-out-all", max_length=190),
                 security_group_id=self.security_group.id,
                 description="Allow all outbound traffic",
@@ -204,6 +207,9 @@ class Ec2WithRdp(ComponentResource):
                 opts=ResourceOptions(parent=self.security_group),
             )
             resolved_security_group_id = self.security_group.id
+            # The new group starts with no rules, so launching the instance before they exist would leave first-boot user
+            # data and the SSM agent without outbound access.
+            instance_depends_on = [*ingress_rules, egress_all]
         self.instance = ec2.Instance(
             append_resource_suffix(name),
             instance_type=instance_type,
@@ -224,7 +230,10 @@ class Ec2WithRdp(ComponentResource):
             if user_data is None
             else user_data.apply(lambda data: base64.b64encode(data.encode("utf-8")).decode("utf-8")),
             opts=ResourceOptions(
-                parent=self, replace_on_changes=replace_on_changes, ignore_changes=instance_ignore_changes
+                parent=self,
+                replace_on_changes=replace_on_changes,
+                ignore_changes=instance_ignore_changes,
+                depends_on=instance_depends_on,
             ),
         )
         if user_data is not None and export_user_data:
