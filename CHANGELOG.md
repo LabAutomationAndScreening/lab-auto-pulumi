@@ -35,6 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `cidr_ipv4`, description required). The egress-all rule is back on `aws.vpc.SecurityGroupEgressRule`.
 
 ### Changed
+
 - A new security group (`NewSecurityGroupConfig`) is now the classic `aws.ec2.SecurityGroup` instead of the aws-native
   one. The classic resource revokes AWS's default allow-all egress rule on create, so the standalone egress-all rule
   no longer collides with it (`InvalidPermission.Duplicate`). It ignores changes to its inline `ingress`/`egress` so
