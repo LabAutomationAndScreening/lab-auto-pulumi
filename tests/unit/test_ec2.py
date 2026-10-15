@@ -484,6 +484,25 @@ class TestNewSecurityGroupConfig:
 
 
 class TestExistingSecurityGroup:
+    def test_When_existing_sg_config_has_depends_on__Then_instance_waits_for_those_resources(
+        self, ec2_mocks: Ec2Mocks, faker: Faker
+    ) -> None:
+        rule_name = faker.slug()
+
+        def program() -> None:
+            rule = pulumi.CustomResource("test:index:Rule", rule_name)
+            _ = _new_ec2_with_rdp(
+                faker=faker,
+                security_group_config=ExistingSecurityGroupConfig(
+                    security_group_id=pulumi.Output.from_input(f"sg-{faker.hexify('^^^^^^^^')}"), depends_on=[rule]
+                ),
+            )
+
+        _run_pulumi_program(program)
+
+        instance = next(r for r in ec2_mocks.created_resources if r.typ == "aws-native:ec2:Instance")
+        assert any(urn.endswith(f"::{rule_name}") for urn in ec2_mocks.dependencies_by_name[instance.name])
+
     @_pulumi_test
     def test_When_existing_sg_config__Then_no_new_security_group_resource_created(
         self, faker: Faker, ec2_mocks: Ec2Mocks

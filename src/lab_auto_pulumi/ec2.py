@@ -71,6 +71,8 @@ class ExistingSecurityGroupConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     security_group_id: Output[str]
+    # Rules on the existing group that the instance must not launch before, e.g. its egress rule.
+    depends_on: list[Resource] = []
 
 
 type _PolicyStatement = dict[str, str | list[str]]
@@ -162,7 +164,7 @@ class Ec2WithRdp(ComponentResource):
                 opts=ResourceOptions(parent=self),
             )
             resolved_security_group_id = self.security_group.id
-            instance_depends_on: list[Resource] = []
+            instance_depends_on: list[Resource] = list(security_group_config.depends_on)
         else:
             # The classic SecurityGroup revokes AWS's default allow-all egress rule on create. The aws-native one keeps
             # it, so the standalone egress rule below would fail as a duplicate.
