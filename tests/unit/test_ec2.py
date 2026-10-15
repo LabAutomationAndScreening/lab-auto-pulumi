@@ -7,25 +7,35 @@ from collections.abc import Sequence
 from enum import Enum
 from enum import auto
 from typing import Any
+from typing import Literal
+from typing import override
 from unittest import mock
 
 import pulumi
 import pulumi.runtime
 import pytest
 from faker import Faker
+from pulumi.runtime.mocks import MockMonitor
+from pulumi.runtime.proto import resource_pb2
 from pulumi_aws.iam import GetPolicyDocumentStatementArgsDict
 from pulumi_aws_native import Provider
 from pulumi_aws_native import TagArgs
 from pulumi_aws_native.outputs import Tag
 from pydantic import TypeAdapter
+from pydantic import ValidationError
 
 from lab_auto_pulumi import CENTRAL_NETWORKING_SSM_PREFIX
 from lab_auto_pulumi import ec2 as lab_auto_ec2_module
 from lab_auto_pulumi.ec2 import Ec2WithRdp
 from lab_auto_pulumi.ec2 import ExistingSecurityGroupConfig
 from lab_auto_pulumi.ec2 import NewSecurityGroupConfig
+from lab_auto_pulumi.ec2 import SecurityGroupIngressRuleConfig
 
 _pulumi_test = pulumi.runtime.test  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType] # pulumi.runtime.test is partially typed in the Pulumi SDK; alias avoids repeating the ignore on every test
+
+_CLASSIC_INGRESS_RULE_TYPE = "aws:vpc/securityGroupIngressRule:SecurityGroupIngressRule"
+_CLASSIC_EGRESS_RULE_TYPE = "aws:vpc/securityGroupEgressRule:SecurityGroupEgressRule"
+_CLASSIC_SECURITY_GROUP_TYPE = "aws:ec2/securityGroup:SecurityGroup"
 
 _EC2_INSTANCE_TYPES = ["t3.micro", "t3.large", "m5.xlarge", "c5.2xlarge"]
 _AWS_REGIONS = ["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-2"]
@@ -45,6 +55,7 @@ class Ec2Mocks(pulumi.runtime.Mocks):
         self.region = random.choice(_AWS_REGIONS)
         self.partition = random.choice(["aws", "aws-cn", "aws-us-gov"])
         self.role_names: dict[str, str] = {}
+        self.dependencies_by_name: dict[str, list[str]] = {}
 
     def new_resource(self, args: pulumi.runtime.MockResourceArgs) -> tuple[str, dict[str, Any]]:  # type: ignore[override] # pyright infers Optional[str] for id but str is always safe here
         self.created_resources.append(args)
@@ -78,6 +89,19 @@ class Ec2Mocks(pulumi.runtime.Mocks):
         return {}
 
 
+class _DependencyCapturingMonitor(MockMonitor):
+    """Records each registered resource's dependency URNs, which `MockResourceArgs` does not expose."""
+
+    def __init__(self, mocks: Ec2Mocks) -> None:
+        super().__init__(mocks)
+        self.ec2_mocks = mocks
+
+    @override
+    def RegisterResource(self, request: resource_pb2.RegisterResourceRequest) -> resource_pb2.RegisterResourceResponse:
+        self.ec2_mocks.dependencies_by_name[request.name] = list(request.dependencies)
+        return super().RegisterResource(request)  # pyright: ignore[reportUnknownMemberType] # the Pulumi SDK leaves MockMonitor's request parameter unannotated
+
+
 def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more readable to specify them as arguments in the tests than pack them into a config object, they are keyword args anyways with a bunch of default values
     *,
     faker: Faker,
@@ -94,6 +118,7 @@ def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more rea
 ) -> Ec2WithRdp:
     with (
         mock.patch.object(lab_auto_ec2_module, lab_auto_ec2_module.common_tags_native.__name__, return_value=[]),
+        mock.patch.object(lab_auto_ec2_module, lab_auto_ec2_module.common_tags.__name__, return_value={}),
         mock.patch.object(
             lab_auto_ec2_module,
             lab_auto_ec2_module.get_org_managed_ssm_param_value.__name__,
@@ -141,10 +166,24 @@ def _random_parent(faker: Faker) -> pulumi.Resource | None:
     return None
 
 
+def _random_ingress_rule(faker: Faker) -> SecurityGroupIngressRuleConfig:
+    port = random.randint(1, 65535)
+    return SecurityGroupIngressRuleConfig(
+        description=faker.sentence(),
+        ip_protocol=random.choice(["tcp", "udp"]),
+        from_port=port,
+        to_port=port,
+        source_security_group_id=f"sg-{faker.hexify('^^^^^^^^')}",
+    )
+
+
 def _random_security_group_config(faker: Faker) -> NewSecurityGroupConfig | ExistingSecurityGroupConfig:
     return random.choice(
         [
             NewSecurityGroupConfig(central_networking_vpc_name=faker.slug()),
+            NewSecurityGroupConfig(
+                central_networking_vpc_name=faker.slug(), ingress_rules=[_random_ingress_rule(faker)]
+            ),
             ExistingSecurityGroupConfig(security_group_id=pulumi.Output.from_input(f"sg-{faker.hexify('^^^^^^^^')}")),
         ]
     )
@@ -176,6 +215,11 @@ def _dcv_role_policies(mocks: Ec2Mocks) -> list[pulumi.runtime.MockResourceArgs]
     ]
 
 
+def _instance_depends_on(mocks: Ec2Mocks, resource: pulumi.runtime.MockResourceArgs) -> bool:
+    instance = next(r for r in mocks.created_resources if r.typ == "aws-native:ec2:Instance")
+    return any(urn.endswith(f"::{resource.name}") for urn in mocks.dependencies_by_name[instance.name])
+
+
 def _run_pulumi_program(program: Callable[[], object]) -> None:
     """Run a Pulumi program under the mocks and return once every resource registration has completed.
 
@@ -205,7 +249,13 @@ def _policy_document_statements_with_actions(
 @pytest.fixture(autouse=True)
 def ec2_mocks(faker: Faker) -> Ec2Mocks:
     mocks = Ec2Mocks(faker=faker)
-    pulumi.runtime.set_mocks(mocks, project="test-project", stack="test-stack")
+    # set_mocks only creates the root Stack when none exists, registering it on the current test's event loop. A test
+    # that never runs its loop (e.g. pure config validation) would leave that root unresolved on a closed loop, and
+    # every later test awaiting the root's URN would fail. Clear it so each test registers its own.
+    pulumi.runtime.reset_options()
+    pulumi.runtime.set_mocks(
+        mocks, project="test-project", stack="test-stack", monitor=_DependencyCapturingMonitor(mocks)
+    )
     return mocks
 
 
@@ -261,7 +311,34 @@ class TestNewSecurityGroupConfig:
 
         return component.security_group.vpc_id.apply(check)
 
-    def test_When_new_sg_config__Then_no_aws_native_security_group_rule_resources_created(
+    def test_When_new_sg_config__Then_security_group_and_rules_are_classic_resources_only(
+        self, ec2_mocks: Ec2Mocks, faker: Faker
+    ) -> None:
+        _run_pulumi_program(
+            lambda: _new_ec2_with_rdp(
+                faker=faker,
+                security_group_config=NewSecurityGroupConfig(
+                    central_networking_vpc_name=faker.slug(), ingress_rules=[_random_ingress_rule(faker)]
+                ),
+            )
+        )
+
+        classic_security_groups = [r for r in ec2_mocks.created_resources if r.typ == _CLASSIC_SECURITY_GROUP_TYPE]
+        native_sg_resources = [
+            r
+            for r in ec2_mocks.created_resources
+            if r.typ
+            in (
+                "aws-native:ec2:SecurityGroup",
+                "aws-native:ec2:SecurityGroupIngress",
+                "aws-native:ec2:SecurityGroupEgress",
+            )
+        ]
+
+        assert len(classic_security_groups) == 1
+        assert [r.typ for r in native_sg_resources] == []
+
+    def test_When_new_sg_config__Then_classic_egress_all_rule_created_before_instance(
         self, ec2_mocks: Ec2Mocks, faker: Faker
     ) -> None:
         _run_pulumi_program(
@@ -270,18 +347,162 @@ class TestNewSecurityGroupConfig:
             )
         )
 
-        security_groups = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:ec2:SecurityGroup"]
-        rules = [
-            r
-            for r in ec2_mocks.created_resources
-            if r.typ in ("aws-native:ec2:SecurityGroupIngress", "aws-native:ec2:SecurityGroupEgress")
-        ]
+        egress = [r for r in ec2_mocks.created_resources if r.typ == _CLASSIC_EGRESS_RULE_TYPE]
+        security_groups = [r for r in ec2_mocks.created_resources if r.typ == _CLASSIC_SECURITY_GROUP_TYPE]
 
         assert len(security_groups) == 1
-        assert [r.name for r in rules] == []
+        assert len(egress) == 1
+        assert egress[0].inputs.get("ipProtocol") == "-1"  # pyright: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
+        assert egress[0].inputs.get("cidrIpv4") == "0.0.0.0/0"  # pyright: ignore[reportUnknownMemberType]
+        assert egress[0].inputs.get("securityGroupId") == f"{security_groups[0].name}-id"  # pyright: ignore[reportUnknownMemberType]
+        assert _instance_depends_on(ec2_mocks, egress[0])
+
+    def test_When_new_sg_with_source_sg_ingress_rule__Then_classic_ingress_rule_created_with_that_source(
+        self, ec2_mocks: Ec2Mocks, faker: Faker
+    ) -> None:
+        ip_protocol: Literal["tcp", "udp"] = random.choice(["tcp", "udp"])
+        from_port = random.randint(1, 30000)
+        to_port = random.randint(from_port, 65535)
+        source_sg_id = f"sg-{faker.hexify('^^^^^^^^')}"
+        description = faker.sentence()
+
+        _run_pulumi_program(
+            lambda: _new_ec2_with_rdp(
+                faker=faker,
+                security_group_config=NewSecurityGroupConfig(
+                    central_networking_vpc_name=faker.slug(),
+                    ingress_rules=[
+                        SecurityGroupIngressRuleConfig(
+                            description=description,
+                            ip_protocol=ip_protocol,
+                            from_port=from_port,
+                            to_port=to_port,
+                            source_security_group_id=pulumi.Output.from_input(source_sg_id),
+                        )
+                    ],
+                ),
+            )
+        )
+
+        ingress = [r for r in ec2_mocks.created_resources if r.typ == _CLASSIC_INGRESS_RULE_TYPE]
+        security_groups = [r for r in ec2_mocks.created_resources if r.typ == _CLASSIC_SECURITY_GROUP_TYPE]
+
+        assert len(ingress) == 1
+        assert ingress[0].inputs.get("ipProtocol") == ip_protocol  # pyright: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
+        assert ingress[0].inputs.get("fromPort") == from_port  # pyright: ignore[reportUnknownMemberType]
+        assert ingress[0].inputs.get("toPort") == to_port  # pyright: ignore[reportUnknownMemberType]
+        assert ingress[0].inputs.get("referencedSecurityGroupId") == source_sg_id  # pyright: ignore[reportUnknownMemberType]
+        assert ingress[0].inputs.get("description") == description  # pyright: ignore[reportUnknownMemberType]
+        assert "cidrIpv4" not in ingress[0].inputs  # pyright: ignore[reportUnknownMemberType]
+        assert ingress[0].inputs.get("securityGroupId") == f"{security_groups[0].name}-id"  # pyright: ignore[reportUnknownMemberType]
+
+    def test_When_new_sg_with_cidr_ingress_rule__Then_classic_ingress_rule_created_with_that_cidr_before_instance(
+        self, ec2_mocks: Ec2Mocks, faker: Faker
+    ) -> None:
+        cidr = f"{faker.ipv4_private()}/32"
+        port = random.randint(1, 65535)
+
+        _run_pulumi_program(
+            lambda: _new_ec2_with_rdp(
+                faker=faker,
+                security_group_config=NewSecurityGroupConfig(
+                    central_networking_vpc_name=faker.slug(),
+                    ingress_rules=[
+                        SecurityGroupIngressRuleConfig(
+                            description=faker.sentence(), from_port=port, to_port=port, cidr_ipv4=cidr
+                        )
+                    ],
+                ),
+            )
+        )
+
+        ingress = [r for r in ec2_mocks.created_resources if r.typ == _CLASSIC_INGRESS_RULE_TYPE]
+
+        assert len(ingress) == 1
+        assert ingress[0].inputs.get("cidrIpv4") == cidr  # pyright: ignore[reportUnknownMemberType] # Pulumi SDK types inputs as dict[Unknown, Unknown]
+        assert ingress[0].inputs.get("ipProtocol") == "tcp"  # pyright: ignore[reportUnknownMemberType]
+        assert "referencedSecurityGroupId" not in ingress[0].inputs  # pyright: ignore[reportUnknownMemberType]
+        assert _instance_depends_on(ec2_mocks, ingress[0])
+
+    def test_When_two_ingress_rules_share_protocol_and_ports__Then_resource_names_are_distinct(
+        self, ec2_mocks: Ec2Mocks, faker: Faker
+    ) -> None:
+        port = random.randint(1, 65535)
+        rules = [
+            SecurityGroupIngressRuleConfig(
+                description=faker.sentence(),
+                from_port=port,
+                to_port=port,
+                source_security_group_id=f"sg-{faker.hexify('^^^^^^^^')}",
+            )
+            for _ in range(2)
+        ]
+
+        _run_pulumi_program(
+            lambda: _new_ec2_with_rdp(
+                faker=faker,
+                security_group_config=NewSecurityGroupConfig(
+                    central_networking_vpc_name=faker.slug(), ingress_rules=rules
+                ),
+            )
+        )
+
+        ingress = [r for r in ec2_mocks.created_resources if r.typ == _CLASSIC_INGRESS_RULE_TYPE]
+
+        assert len(ingress) == len(rules)
+        assert ingress[0].name != ingress[1].name
+
+    def test_When_ingress_rule_has_empty_description__Then_raises_validation_error(self, faker: Faker) -> None:
+        with pytest.raises(ValidationError, match="description"):
+            _ = SecurityGroupIngressRuleConfig(
+                description="", from_port=3389, to_port=3389, source_security_group_id=f"sg-{faker.hexify('^^^^^^^^')}"
+            )
+
+    def test_When_ingress_rule_uses_all_protocols__Then_raises_validation_error(self, faker: Faker) -> None:
+        with pytest.raises(ValidationError, match="ip_protocol"):
+            _ = SecurityGroupIngressRuleConfig(
+                description=faker.sentence(),
+                ip_protocol="-1",  # pyright: ignore[reportArgumentType] # pyrefly: ignore[bad-argument-type] # deliberately invalid to exercise validation
+                from_port=3389,
+                to_port=3389,
+                source_security_group_id=f"sg-{faker.hexify('^^^^^^^^')}",
+            )
+
+    def test_When_ingress_rule_has_no_source__Then_raises_validation_error(self, faker: Faker) -> None:
+        with pytest.raises(ValidationError, match="neither source_security_group_id nor cidr_ipv4 is set"):
+            _ = SecurityGroupIngressRuleConfig(description=faker.sentence(), from_port=3389, to_port=3389)
+
+    def test_When_ingress_rule_has_both_sources__Then_raises_validation_error(self, faker: Faker) -> None:
+        with pytest.raises(ValidationError, match="both source_security_group_id and cidr_ipv4 are set"):
+            _ = SecurityGroupIngressRuleConfig(
+                description=faker.sentence(),
+                from_port=3389,
+                to_port=3389,
+                source_security_group_id=f"sg-{faker.hexify('^^^^^^^^')}",
+                cidr_ipv4=f"{faker.ipv4_private()}/32",
+            )
 
 
 class TestExistingSecurityGroup:
+    def test_When_existing_sg_config_has_depends_on__Then_instance_waits_for_those_resources(
+        self, ec2_mocks: Ec2Mocks, faker: Faker
+    ) -> None:
+        rule_name = faker.slug()
+
+        def program() -> None:
+            rule = pulumi.CustomResource("test:index:Rule", rule_name)
+            _ = _new_ec2_with_rdp(
+                faker=faker,
+                security_group_config=ExistingSecurityGroupConfig(
+                    security_group_id=pulumi.Output.from_input(f"sg-{faker.hexify('^^^^^^^^')}"), depends_on=[rule]
+                ),
+            )
+
+        _run_pulumi_program(program)
+
+        instance = next(r for r in ec2_mocks.created_resources if r.typ == "aws-native:ec2:Instance")
+        assert any(urn.endswith(f"::{rule_name}") for urn in ec2_mocks.dependencies_by_name[instance.name])
+
     @_pulumi_test
     def test_When_existing_sg_config__Then_no_new_security_group_resource_created(
         self, faker: Faker, ec2_mocks: Ec2Mocks
