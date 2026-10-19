@@ -41,9 +41,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   the request had no `ebs` block.
 
 > [!NOTE]
-> Upgrading adds `deleteOnTermination: true` to the instance inputs. If the live value is already `true` (the default
-> for root volumes attached at launch), aws-native diffs against the live value and plans no change. An instance
-> whose root volume is currently `false` gets an in-place update to `true` unless the caller passes `False`.
+> Upgrading adds `deleteOnTermination: true` to the instance inputs, so the first `pulumi up` after upgrading likely
+> shows an in-place update to `blockDeviceMappings`. For a root volume attached at launch the live value is already
+> `true`, so the update changes nothing on AWS. A root volume currently set to `false` flips to `true` unless the
+> caller passes `False`. Check the preview before applying.
 
 ---
 ## [0.5.0] - 2026-09-30
