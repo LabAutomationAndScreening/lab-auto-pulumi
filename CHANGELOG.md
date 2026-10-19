@@ -27,6 +27,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Describe security fixes or improvements.
 
 ---
+## [0.6.0] - 2026-10-19
+
+### Added
+- `Ec2WithRdp(root_volume_delete_on_termination=True)`: sets `DeleteOnTermination` on the root volume's EBS block
+  device mapping. Pass `False` to keep the root volume after the instance terminates.
+
+### Fixed
+- In-place updates of the `aws-native:ec2:Instance` created by `Ec2WithRdp` (for example a `securityGroupIds`
+  change) failed with `The request must contain the parameter ebs`. pulumi-aws-native sends the full
+  `blockDeviceMappings` list on every instance update because some of its sub-properties are write-only, and Cloud
+  Control applies it with `ModifyInstanceAttribute`, whose `ebs` block only accepts `DeleteOnTermination`. Without it
+  the request had no `ebs` block.
+
+> [!NOTE]
+> Upgrading adds `deleteOnTermination: true` to the instance inputs. If the live value is already `true` (the default
+> for root volumes attached at launch), aws-native diffs against the live value and plans no change. An instance
+> whose root volume is currently `false` gets an in-place update to `true` unless the caller passes `False`.
+
+---
 ## [0.5.0] - 2026-09-30
 
 ### Added
