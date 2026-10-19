@@ -119,7 +119,6 @@ def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more rea
     root_volume_delete_on_termination: bool | _Unset = _Unset.TOKEN,
     parent: pulumi.Resource | _Unset | None = _Unset.TOKEN,
 ) -> Ec2WithRdp:
-    # Left out when unset so tests can exercise the component's own default.
     optional_kwargs: dict[str, bool] = {}
     if not isinstance(root_volume_delete_on_termination, _Unset):
         optional_kwargs["root_volume_delete_on_termination"] = root_volume_delete_on_termination
