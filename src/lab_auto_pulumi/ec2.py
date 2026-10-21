@@ -107,6 +107,11 @@ class Ec2WithRdp(ComponentResource):
         image_id: str,
         security_group_config: NewSecurityGroupConfig | ExistingSecurityGroupConfig,
         root_volume_gb: int = 30,
+        # Always sent so the value is present in every update. Cloud Control applies the root block device mapping
+        # with ModifyInstanceAttribute, which only accepts DeleteOnTermination; leaving it out fails every instance
+        # update with "The request must contain the parameter ebs". Same error from a different trigger (kmsKeyId):
+        # https://github.com/pulumi/pulumi-aws-native/issues/3141
+        root_volume_delete_on_termination: bool = True,
         user_data: Output[str]
         | None = None,  # On Windows EC2, Userdata script shows up here: C:\Windows\system32\config\systemprofile\AppData\Local\Temp\Amazon\EC2-Windows\Launch\InvokeUserData\UserScript.ps1.  You may need to start just at system32 and navigate down, because it will keep asking for permissions
         additional_instance_tags: list[TagArgs] | None = None,
@@ -222,7 +227,12 @@ class Ec2WithRdp(ComponentResource):
             security_group_ids=[resolved_security_group_id],
             block_device_mappings=[
                 ec2.InstanceBlockDeviceMappingArgs(
-                    device_name="/dev/sda1", ebs=ec2.InstanceEbsArgs(volume_size=root_volume_gb, volume_type="gp3")
+                    device_name="/dev/sda1",
+                    ebs=ec2.InstanceEbsArgs(
+                        volume_size=root_volume_gb,
+                        volume_type="gp3",
+                        delete_on_termination=root_volume_delete_on_termination,
+                    ),
                 )
             ],
             iam_instance_profile=instance_profile.instance_profile_name,

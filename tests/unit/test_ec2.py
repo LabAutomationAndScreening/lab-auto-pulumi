@@ -20,6 +20,7 @@ from pulumi.runtime.proto import resource_pb2
 from pulumi_aws.iam import GetPolicyDocumentStatementArgsDict
 from pulumi_aws_native import Provider
 from pulumi_aws_native import TagArgs
+from pulumi_aws_native.ec2.outputs import InstanceBlockDeviceMapping
 from pulumi_aws_native.outputs import Tag
 from pydantic import TypeAdapter
 from pydantic import ValidationError
@@ -114,8 +115,13 @@ def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more rea
     additional_instance_tags: list[TagArgs] | _Unset | None = _Unset.TOKEN,
     instance_ignore_changes: list[str] | _Unset | None = _Unset.TOKEN,
     grant_dcv_license_access: bool | _Unset = _Unset.TOKEN,
+    root_volume_gb: int | _Unset = _Unset.TOKEN,
+    root_volume_delete_on_termination: bool | _Unset = _Unset.TOKEN,
     parent: pulumi.Resource | _Unset | None = _Unset.TOKEN,
 ) -> Ec2WithRdp:
+    optional_kwargs: dict[str, bool] = {}
+    if not isinstance(root_volume_delete_on_termination, _Unset):
+        optional_kwargs["root_volume_delete_on_termination"] = root_volume_delete_on_termination
     with (
         mock.patch.object(lab_auto_ec2_module, lab_auto_ec2_module.common_tags_native.__name__, return_value=[]),
         mock.patch.object(lab_auto_ec2_module, lab_auto_ec2_module.common_tags.__name__, return_value={}),
@@ -144,7 +150,9 @@ def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more rea
                 ),
             ),
             grant_dcv_license_access=_or_random(grant_dcv_license_access, factory=lambda: random.choice([True, False])),
+            root_volume_gb=_or_random(root_volume_gb, factory=lambda: random.randint(30, 500)),
             parent=_or_random(parent, factory=lambda: _random_parent(faker)),
+            **optional_kwargs,
         )
 
 
@@ -544,6 +552,42 @@ class TestExistingSecurityGroup:
             assert sg_id in sg_ids, f"Expected {sg_id!r} in {sg_ids}"
 
         return component.instance.security_group_ids.apply(check)
+
+
+class TestRootVolume:
+    @_pulumi_test
+    def test_When_delete_on_termination_not_specified__Then_root_volume_sets_it_true(
+        self, faker: Faker
+    ) -> pulumi.Output[None]:
+        root_volume_gb = random.randint(30, 500)
+        component = _new_ec2_with_rdp(faker=faker, root_volume_gb=root_volume_gb)
+
+        def check(mappings: Sequence[InstanceBlockDeviceMapping] | None) -> None:
+            assert mappings is not None
+            assert len(mappings) == 1
+            assert mappings[0].device_name == "/dev/sda1"
+            ebs = mappings[0].ebs
+            assert ebs is not None
+            assert ebs.volume_size == root_volume_gb
+            assert ebs.volume_type == "gp3"
+            assert ebs.delete_on_termination is True
+
+        return component.instance.block_device_mappings.apply(check)
+
+    @_pulumi_test
+    def test_When_delete_on_termination_false__Then_root_volume_sets_it_false(
+        self, faker: Faker
+    ) -> pulumi.Output[None]:
+        component = _new_ec2_with_rdp(faker=faker, root_volume_delete_on_termination=False)
+
+        def check(mappings: Sequence[InstanceBlockDeviceMapping] | None) -> None:
+            assert mappings is not None
+            assert len(mappings) == 1
+            ebs = mappings[0].ebs
+            assert ebs is not None
+            assert ebs.delete_on_termination is False
+
+        return component.instance.block_device_mappings.apply(check)
 
 
 class TestUserData:
