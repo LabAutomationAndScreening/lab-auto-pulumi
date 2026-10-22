@@ -75,6 +75,40 @@ class ExistingSecurityGroupConfig(BaseModel):
     depends_on: list[Resource] = []
 
 
+_ROOT_DEVICE_NAME = "/dev/sda1"
+_GP3_DEFAULT_IOPS = 3000
+
+
+class RootVolumeSource(BaseModel):
+    """Root volume settings that must match what AWS reports for the running instance.
+
+    pulumi-aws-native sends the whole `blockDeviceMappings` list on every instance update, and Cloud Control rejects
+    the update with `NotUpdatable` unless the root volume's `SnapshotId`, `Encrypted` and `Iops` match the live
+    volume. By default `Ec2WithRdp` reads them from the AMI's `/dev/sda1` mapping. Pass this instead when that lookup
+    cannot work, e.g. the AMI has since been deregistered.
+    """
+
+    snapshot_id: str
+    encrypted: bool
+    iops: int
+
+
+def _root_volume_source_from_ami(*, ami: classic_ec2.GetAmiResult, image_id: str) -> RootVolumeSource:
+    for mapping in ami.block_device_mappings:
+        if mapping.device_name != _ROOT_DEVICE_NAME:
+            continue
+        ebs = mapping.ebs
+        if ebs["volume_type"] == "gp3":
+            iops = int(ebs["iops"])
+        else:
+            # Ec2WithRdp always overrides the volume type to gp3, so AWS provisions the gp3 default
+            iops = _GP3_DEFAULT_IOPS
+        return RootVolumeSource(snapshot_id=ebs["snapshot_id"], encrypted=ebs["encrypted"] == "true", iops=iops)
+    raise ValueError(  # noqa: TRY003 # this doesn't warrant a custom exception
+        f"AMI {image_id} has no {_ROOT_DEVICE_NAME} block device mapping, which Ec2WithRdp uses as the root volume"
+    )
+
+
 type _PolicyStatement = dict[str, str | list[str]]
 type _PolicyDocument = dict[str, str | list[_PolicyStatement]]
 
@@ -112,6 +146,7 @@ class Ec2WithRdp(ComponentResource):
         # update with "The request must contain the parameter ebs". Same error from a different trigger (kmsKeyId):
         # https://github.com/pulumi/pulumi-aws-native/issues/3141
         root_volume_delete_on_termination: bool = True,
+        root_volume_source: RootVolumeSource | None = None,
         user_data: Output[str]
         | None = None,  # On Windows EC2, Userdata script shows up here: C:\Windows\system32\config\systemprofile\AppData\Local\Temp\Amazon\EC2-Windows\Launch\InvokeUserData\UserScript.ps1.  You may need to start just at system32 and navigate down, because it will keep asking for permissions
         additional_instance_tags: list[TagArgs] | None = None,
@@ -217,6 +252,13 @@ class Ec2WithRdp(ComponentResource):
             # The new group starts with no rules, so launching the instance before they exist would leave first-boot user
             # data and the SSM agent without outbound access.
             instance_depends_on = [*ingress_rules, egress_all]
+        if root_volume_source is None:
+            resolved_root_volume_source = classic_ec2.get_ami_output(
+                filters=[classic_ec2.GetAmiFilterArgs(name="image-id", values=[image_id])],
+                opts=InvokeOutputOptions(parent=self),
+            ).apply(lambda ami: _root_volume_source_from_ami(ami=ami, image_id=image_id))
+        else:
+            resolved_root_volume_source = Output.from_input(root_volume_source)
         self.instance = ec2.Instance(
             append_resource_suffix(name),
             instance_type=instance_type,
@@ -227,11 +269,14 @@ class Ec2WithRdp(ComponentResource):
             security_group_ids=[resolved_security_group_id],
             block_device_mappings=[
                 ec2.InstanceBlockDeviceMappingArgs(
-                    device_name="/dev/sda1",
+                    device_name=_ROOT_DEVICE_NAME,
                     ebs=ec2.InstanceEbsArgs(
                         volume_size=root_volume_gb,
                         volume_type="gp3",
                         delete_on_termination=root_volume_delete_on_termination,
+                        snapshot_id=resolved_root_volume_source.apply(lambda source: source.snapshot_id),
+                        encrypted=resolved_root_volume_source.apply(lambda source: source.encrypted),
+                        iops=resolved_root_volume_source.apply(lambda source: source.iops),
                     ),
                 )
             ],
