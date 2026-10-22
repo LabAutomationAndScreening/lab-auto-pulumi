@@ -35,6 +35,7 @@ from .constants import WORKLOAD_INFO_SSM_PARAM_PREFIX
 from .ec2 import Ec2WithRdp
 from .ec2 import ExistingSecurityGroupConfig
 from .ec2 import NewSecurityGroupConfig
+from .ec2 import RootVolumeSource
 from .ec2 import SecurityGroupIngressRuleConfig
 from .lib import AwsAccountId
 from .lib import WorkloadName
@@ -74,6 +75,7 @@ __all__ = [
     "NewSecurityGroupConfig",
     "OrgInfo",
     "OrganizationInfo",
+    "RootVolumeSource",
     "SecurityGroupIngressRuleConfig",
     "User",
     "UserAttributes",

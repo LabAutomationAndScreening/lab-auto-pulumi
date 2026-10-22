@@ -27,6 +27,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Describe security fixes or improvements.
 
 ---
+## [0.7.0] - 2026-10-21
+
+### Added
+- `Ec2WithRdp(root_volume_source=RootVolumeSource(...))`: sets the root volume's `SnapshotId`, `Encrypted` and `Iops`
+  explicitly. When omitted they are read from the AMI's `/dev/sda1` block device mapping with `aws.ec2.getAmi`.
+
+### Fixed
+- In-place updates of the `aws-native:ec2:Instance` created by `Ec2WithRdp` still failed after 0.6.0, now with
+  `NotUpdatable: Resource of type 'EC2Instance' ... is not updatable with parameters provided`. pulumi-aws-native sends
+  the full `blockDeviceMappings` list on every update, and Cloud Control treats a root volume mapping that leaves out
+  `SnapshotId` or `Encrypted` as a change to a create-only setting. The root volume mapping now carries the same
+  `SnapshotId`, `Encrypted` and `Iops` that AWS reports for the live volume.
+
+> [!NOTE]
+> Upgrading adds `snapshotId`, `encrypted` and `iops` to the instance inputs, so the first `pulumi up` likely shows an
+> in-place update to `blockDeviceMappings`. The values match the live volume, so the update changes nothing on AWS.
+> The AMI lookup fails if the instance's AMI has been deregistered or has no `/dev/sda1` mapping; pass
+> `root_volume_source` in that case.
+
+---
 ## [0.6.0] - 2026-10-19
 
 ### Added

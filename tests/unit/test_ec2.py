@@ -30,6 +30,7 @@ from lab_auto_pulumi import ec2 as lab_auto_ec2_module
 from lab_auto_pulumi.ec2 import Ec2WithRdp
 from lab_auto_pulumi.ec2 import ExistingSecurityGroupConfig
 from lab_auto_pulumi.ec2 import NewSecurityGroupConfig
+from lab_auto_pulumi.ec2 import RootVolumeSource
 from lab_auto_pulumi.ec2 import SecurityGroupIngressRuleConfig
 
 _pulumi_test = pulumi.runtime.test  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType] # pulumi.runtime.test is partially typed in the Pulumi SDK; alias avoids repeating the ignore on every test
@@ -37,6 +38,7 @@ _pulumi_test = pulumi.runtime.test  # pyright: ignore[reportUnknownMemberType, r
 _CLASSIC_INGRESS_RULE_TYPE = "aws:vpc/securityGroupIngressRule:SecurityGroupIngressRule"
 _CLASSIC_EGRESS_RULE_TYPE = "aws:vpc/securityGroupEgressRule:SecurityGroupEgressRule"
 _CLASSIC_SECURITY_GROUP_TYPE = "aws:ec2/securityGroup:SecurityGroup"
+_GET_AMI_TOKEN = "aws:ec2/getAmi:getAmi"  # noqa:S105 # definitely not a password
 
 _EC2_INSTANCE_TYPES = ["t3.micro", "t3.large", "m5.xlarge", "c5.2xlarge"]
 _AWS_REGIONS = ["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-2"]
@@ -57,6 +59,35 @@ class Ec2Mocks(pulumi.runtime.Mocks):
         self.partition = random.choice(["aws", "aws-cn", "aws-us-gov"])
         self.role_names: dict[str, str] = {}
         self.dependencies_by_name: dict[str, list[str]] = {}
+        self.ami_root_snapshot_id = f"snap-{faker.hexify('^^^^^^^^^^^^^^^^^')}"
+        self.ami_root_encrypted = random.choice([True, False])
+        self.ami_root_iops = random.randint(3000, 16000)
+        self.ami_root_volume_type = "gp3"
+        self.ami_root_device_name = "/dev/sda1"
+
+    def _ami_block_device_mappings(self) -> list[dict[str, str | dict[str, str]]]:
+        ephemeral: dict[str, str | dict[str, str]] = {
+            "deviceName": "xvdca",
+            "ebs": dict[str, str](),
+            "noDevice": "",
+            "virtualName": "ephemeral0",
+        }
+        root: dict[str, str | dict[str, str]] = {
+            "deviceName": self.ami_root_device_name,
+            "ebs": {
+                "delete_on_termination": "true",
+                "encrypted": str(self.ami_root_encrypted).lower(),
+                "iops": str(self.ami_root_iops),
+                "snapshot_id": self.ami_root_snapshot_id,
+                "throughput": "125",
+                "volume_size": "30",
+                "volume_type": self.ami_root_volume_type,
+            },
+            "noDevice": "",
+            "virtualName": "",
+        }
+        # The root mapping is deliberately not first, so the lookup has to match it by device name
+        return [ephemeral, root]
 
     def new_resource(self, args: pulumi.runtime.MockResourceArgs) -> tuple[str, dict[str, Any]]:  # type: ignore[override] # pyright infers Optional[str] for id but str is always safe here
         self.created_resources.append(args)
@@ -87,6 +118,11 @@ class Ec2Mocks(pulumi.runtime.Mocks):
             return {"region": self.region}
         if args.token == "aws-native:index:getPartition":  # noqa:S105 # definitely not a password
             return {"partition": self.partition}
+        if args.token == _GET_AMI_TOKEN:
+            return {
+                "rootDeviceName": self.ami_root_device_name,
+                "blockDeviceMappings": self._ami_block_device_mappings(),
+            }
         return {}
 
 
@@ -117,6 +153,7 @@ def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more rea
     grant_dcv_license_access: bool | _Unset = _Unset.TOKEN,
     root_volume_gb: int | _Unset = _Unset.TOKEN,
     root_volume_delete_on_termination: bool | _Unset = _Unset.TOKEN,
+    root_volume_source: RootVolumeSource | None = None,
     parent: pulumi.Resource | _Unset | None = _Unset.TOKEN,
 ) -> Ec2WithRdp:
     optional_kwargs: dict[str, bool] = {}
@@ -151,6 +188,7 @@ def _new_ec2_with_rdp(  # noqa: PLR0913 # too many parameters, but it's more rea
             ),
             grant_dcv_license_access=_or_random(grant_dcv_license_access, factory=lambda: random.choice([True, False])),
             root_volume_gb=_or_random(root_volume_gb, factory=lambda: random.randint(30, 500)),
+            root_volume_source=root_volume_source,
             parent=_or_random(parent, factory=lambda: _random_parent(faker)),
             **optional_kwargs,
         )
@@ -588,6 +626,97 @@ class TestRootVolume:
             assert ebs.delete_on_termination is False
 
         return component.instance.block_device_mappings.apply(check)
+
+    @_pulumi_test
+    def test_When_no_root_volume_source__Then_root_volume_carries_snapshot_encryption_and_iops_from_ami(
+        self, faker: Faker, ec2_mocks: Ec2Mocks
+    ) -> pulumi.Output[None]:
+        root_volume_gb = random.randint(30, 500)
+        component = _new_ec2_with_rdp(faker=faker, root_volume_gb=root_volume_gb)
+
+        def check(mappings: Sequence[InstanceBlockDeviceMapping] | None) -> None:
+            assert mappings is not None
+            assert len(mappings) == 1
+            assert mappings[0].device_name == "/dev/sda1"
+            ebs = mappings[0].ebs
+            assert ebs is not None
+            assert ebs.snapshot_id == ec2_mocks.ami_root_snapshot_id
+            assert ebs.encrypted is ec2_mocks.ami_root_encrypted
+            assert ebs.iops == ec2_mocks.ami_root_iops
+            assert ebs.volume_size == root_volume_gb
+            assert ebs.volume_type == "gp3"
+
+        return component.instance.block_device_mappings.apply(check)
+
+    @_pulumi_test
+    def test_Given_ami_root_volume_not_gp3__When_no_root_volume_source__Then_root_volume_iops_is_gp3_default(
+        self, faker: Faker, ec2_mocks: Ec2Mocks
+    ) -> pulumi.Output[None]:
+        ec2_mocks.ami_root_volume_type = random.choice(["gp2", "io1", "io2", "standard"])
+        component = _new_ec2_with_rdp(faker=faker)
+
+        def check(mappings: Sequence[InstanceBlockDeviceMapping] | None) -> None:
+            assert mappings is not None
+            ebs = mappings[0].ebs
+            assert ebs is not None
+            assert ebs.iops == 3000  # noqa: PLR2004 # the AWS default for gp3, which is what AWS provisions when the volume type is overridden to gp3
+
+        return component.instance.block_device_mappings.apply(check)
+
+    def test_When_no_root_volume_source__Then_ami_looked_up_by_image_id(
+        self, ec2_mocks: Ec2Mocks, faker: Faker
+    ) -> None:
+        image_id = f"ami-{faker.hexify('^^^^^^^^')}"
+
+        _run_pulumi_program(lambda: _new_ec2_with_rdp(faker=faker, image_id=image_id))
+
+        ami_lookups = [c for c in ec2_mocks.captured_calls if c.token == _GET_AMI_TOKEN]
+
+        assert len(ami_lookups) == 1
+        assert ami_lookups[0].args["filters"] == [{"name": "image-id", "values": [image_id]}]  # pyright: ignore[reportUnknownMemberType] # MockCallArgs.args is typed as bare dict in the Pulumi SDK
+
+    def test_Given_ami_has_no_sda1_mapping__When_no_root_volume_source__Then_raises_naming_image_and_device(
+        self, ec2_mocks: Ec2Mocks, faker: Faker
+    ) -> None:
+        image_id = f"ami-{faker.hexify('^^^^^^^^')}"
+        ec2_mocks.ami_root_device_name = "/dev/xvda"
+
+        with pytest.raises(ValueError, match=rf"{image_id}.*/dev/sda1"):
+            _run_pulumi_program(lambda: _new_ec2_with_rdp(faker=faker, image_id=image_id))
+
+    @_pulumi_test
+    def test_When_root_volume_source_provided__Then_root_volume_uses_it(self, faker: Faker) -> pulumi.Output[None]:
+        source = RootVolumeSource(
+            snapshot_id=f"snap-{faker.hexify('^^^^^^^^^^^^^^^^^')}",
+            encrypted=random.choice([True, False]),
+            iops=random.randint(3000, 16000),
+        )
+        component = _new_ec2_with_rdp(faker=faker, root_volume_source=source)
+
+        def check(mappings: Sequence[InstanceBlockDeviceMapping] | None) -> None:
+            assert mappings is not None
+            ebs = mappings[0].ebs
+            assert ebs is not None
+            assert ebs.snapshot_id == source.snapshot_id
+            assert ebs.encrypted is source.encrypted
+            assert ebs.iops == source.iops
+
+        return component.instance.block_device_mappings.apply(check)
+
+    def test_When_root_volume_source_provided__Then_ami_not_looked_up(self, ec2_mocks: Ec2Mocks, faker: Faker) -> None:
+        source = RootVolumeSource(
+            snapshot_id=f"snap-{faker.hexify('^^^^^^^^^^^^^^^^^')}",
+            encrypted=random.choice([True, False]),
+            iops=random.randint(3000, 16000),
+        )
+
+        _run_pulumi_program(lambda: _new_ec2_with_rdp(faker=faker, root_volume_source=source))
+
+        instances = [r for r in ec2_mocks.created_resources if r.typ == "aws-native:ec2:Instance"]
+        ami_lookups = [c for c in ec2_mocks.captured_calls if c.token == _GET_AMI_TOKEN]
+
+        assert len(instances) == 1
+        assert ami_lookups == []
 
 
 class TestUserData:
