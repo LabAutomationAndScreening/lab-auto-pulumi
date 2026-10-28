@@ -70,6 +70,10 @@ visibility = []
 path = "tests"
 depends_on = []
 
+[tool.tach.external]
+# boto3-stubs[ssm] installs mypy_boto3_ssm as a distribution of its own, which tach can't trace back to boto3-stubs.
+rename = ["mypy_boto3_ssm:boto3-stubs"]
+
 [tool.uv]
 package = true
 
