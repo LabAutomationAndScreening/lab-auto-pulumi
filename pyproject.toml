@@ -54,6 +54,30 @@ dev = [
 [tool.setuptools]
 license-files = [] # kludge until this bug is fixed https://github.com/pypa/setuptools/issues/4759
 
+[tool.tach]
+source_roots = ["src", "."]
+exclude = [".venv", "**/__pycache__", "**/*.egg-info", "mutants"]
+
+# Never import from a conftest.py (https://docs.pytest.org/en/stable/how-to/writing_plugins.html#conftest-py-local-per-directory-plugins);
+# put shared helpers in a regular module instead. Declaring `tests` as a module is what makes tach check the tests'
+# imports at all; a file outside every module is never checked.
+[[tool.tach.modules]]
+path = "tests"
+cannot_depend_on = ["tests.**.conftest"]
+
+# Makes each conftest.py its own module, so the rule above has something to match. tach puts a file only in its most
+# specific module, so conftests are not part of `tests` and need the rule repeated to block conftest-to-conftest imports.
+# `visibility = []` also rejects any module that lists a conftest in its `depends_on`. It can't stop a module that omits
+# `depends_on`, so any other module declared under `tests` needs the same `cannot_depend_on` line.
+[[tool.tach.modules]]
+path = "tests.**.conftest"
+cannot_depend_on = ["tests.**.conftest"]
+visibility = []
+
+[tool.tach.external]
+# boto3-stubs[ssm] installs mypy_boto3_ssm as a distribution of its own, which tach can't trace back to boto3-stubs.
+rename = ["mypy_boto3_ssm:boto3-stubs"]
+
 [tool.uv]
 package = true
 
